@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './pages/LandingPage';
 import { ExplorePage } from './pages/ExplorePage';
@@ -60,6 +61,7 @@ export function App() {
           <ManagementPage region={region} onNavigate={setCurrentTab} />
         )}
       </main>
+      <Analytics />
     </div>
   );
 }

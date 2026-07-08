@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Send,
   Mic,
@@ -100,16 +100,50 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     }
   };
 
-  const handleRelockGPS = () => {
+  const acquireRealGPS = () => {
     setGpsLocked(false);
-    setTimeout(() => {
-      setCoordinates({
-        lat: (18.7000 + Math.random() * 0.02).toFixed(4),
-        lng: (82.8400 + Math.random() * 0.02).toFixed(4),
-        locationName: 'Pottangi Road Ward 4, Semiliguda Block (GPS Verified)',
-      });
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude.toFixed(4);
+          const lng = position.coords.longitude.toFixed(4);
+          let locName = `GPS Lock • ${lat}° N, ${lng}° E`;
+
+          try {
+            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+              headers: { 'Accept-Language': 'en' },
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.display_name) {
+                const parts = data.display_name.split(',');
+                locName = parts.slice(0, 3).join(', ').trim();
+              }
+            }
+          } catch (err) {
+            console.warn('Reverse geocode warning:', err);
+          }
+
+          setCoordinates({ lat, lng, locationName: locName });
+          setGpsLocked(true);
+        },
+        (error) => {
+          console.warn('GPS location error:', error);
+          setGpsLocked(true);
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    } else {
       setGpsLocked(true);
-    }, 600);
+    }
+  };
+
+  useEffect(() => {
+    acquireRealGPS();
+  }, []);
+
+  const handleRelockGPS = () => {
+    acquireRealGPS();
   };
 
   const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,26 +152,69 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
 
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      setPhotoPreviewUrl(base64);
+      const rawBase64 = event.target?.result as string;
       setPhotoUploaded(true);
       setIsEvaluatingPhoto(true);
 
-      const result = await evaluateLocalityPhoto(base64);
-      setVisionResult(result);
-      if (result.category) {
-        setCategory(result.category);
-      }
-      setIsEvaluatingPhoto(false);
+      // Compress photo via canvas to ~800px width so it never throws QuotaExceededError and evaluates instantly
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.82);
+          setPhotoPreviewUrl(compressedBase64);
+
+          const result = await evaluateLocalityPhoto(compressedBase64);
+          setVisionResult(result);
+          if (result.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(result.category)) {
+            setCategory(result.category);
+          }
+          setIsEvaluatingPhoto(false);
+        } else {
+          setPhotoPreviewUrl(rawBase64);
+          const result = await evaluateLocalityPhoto(rawBase64);
+          setVisionResult(result);
+          setIsEvaluatingPhoto(false);
+        }
+      };
+      img.onerror = async () => {
+        setPhotoPreviewUrl(rawBase64);
+        const result = await evaluateLocalityPhoto(rawBase64);
+        setVisionResult(result);
+        setIsEvaluatingPhoto(false);
+      };
+      img.src = rawBase64;
     };
     reader.readAsDataURL(file);
   };
 
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (intakeMode === 'PHOTO' && visionResult?.detectedIssue?.includes('[REJECTED]')) {
+      alert('⚠️ CANNOT SUBMIT REPORT:\n\nOur AI pre-submission filter rejected this photo because it shows a laptop screen, keyboard, indoor room, or non-civic object instead of public infrastructure damage.\n\nPlease snap or upload a photo of actual outdoor road/pavement damage, drainage overflow, or civic deterioration.');
+      return;
+    }
+
     await publishLocalityReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
-      category: visionResult?.category || category,
+      category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
       priorityLevel: visionResult?.priorityLevel || 'HIGH',
       priorityScore: visionResult?.confidenceScore || 94,
       detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
