@@ -1,0 +1,17 @@
+{
+  "short_name": "Priorities",
+  "name": "People's Priorities: AI for Constituency Development Planning",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#090D16",
+  "theme_color": "#090D16",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "description": "Transforming thousands of citizen voice, photo, and text reports into evidence-backed development priorities for Members of Parliament."
+}
