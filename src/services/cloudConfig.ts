@@ -18,10 +18,18 @@ export interface CloudConfigState {
 const CONFIG_STORAGE_KEY = 'peoples_priorities_cloud_config_v1';
 
 export function getCloudConfig(): CloudConfigState {
-  // 1. Check Vercel / Vite environment variables first
-  const envGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-  const envFirebaseApiKey = import.meta.env.VITE_FIREBASE_API_KEY || '';
-  const envFirebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '';
+  // 1. Check Vercel / Vite environment variables first, otherwise use real production defaults
+  const defaultGeminiKey = 'AIzaSyAEHUvHsWPtJvFb5k2INGDeYDNVCqnTNSY';
+  const defaultFirebase = {
+    apiKey: 'AIzaSyC2Qufkje5ySeQut5ht7RKBDZTbfZvNrw0',
+    authDomain: 'peoples-priorities-cloud.firebaseapp.com',
+    projectId: 'peoples-priorities-cloud',
+    storageBucket: 'peoples-priorities-cloud.firebasestorage.app',
+    messagingSenderId: '470632059939',
+    appId: '1:470632059939:web:8a5490234d70e072bc0d96',
+  };
+
+  const envGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || defaultGeminiKey;
 
   // 2. Check localStorage for user overrides in the live web UI
   let savedConfig: Partial<CloudConfigState> = {};
@@ -34,14 +42,14 @@ export function getCloudConfig(): CloudConfigState {
     console.warn('Failed to parse cloud config from storage', e);
   }
 
-  const geminiApiKey = savedConfig.geminiApiKey || envGeminiKey || '';
+  const geminiApiKey = savedConfig.geminiApiKey || envGeminiKey;
   const firebaseConfig: FirebaseConfig = {
-    apiKey: savedConfig.firebaseConfig?.apiKey || envFirebaseApiKey || '',
-    authDomain: savedConfig.firebaseConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-    projectId: savedConfig.firebaseConfig?.projectId || envFirebaseProjectId || '',
-    storageBucket: savedConfig.firebaseConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: savedConfig.firebaseConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || '',
+    apiKey: savedConfig.firebaseConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || defaultFirebase.apiKey,
+    authDomain: savedConfig.firebaseConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || defaultFirebase.authDomain,
+    projectId: savedConfig.firebaseConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultFirebase.projectId,
+    storageBucket: savedConfig.firebaseConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || defaultFirebase.storageBucket,
+    messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultFirebase.messagingSenderId,
+    appId: savedConfig.firebaseConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || defaultFirebase.appId,
   };
 
   const useLiveFirebase = Boolean(
