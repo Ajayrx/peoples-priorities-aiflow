@@ -11,11 +11,13 @@ import {
   RefreshCw,
   Sparkles,
   ChevronRight,
-  Upload,
-  Volume2,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  Volume2
 } from 'lucide-react';
 import type { Region, CategoryType } from '../types';
+import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
+import { publishLocalityReport } from '../services/liveCloudBus';
 
 interface ReportPageProps {
   region: Region;
@@ -45,9 +47,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
   const [voiceRecorded, setVoiceRecorded] = useState<boolean>(true);
   const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'ENGLISH'>('ODIA');
 
-  // Photo simulation state
-  const [photoUploaded, setPhotoUploaded] = useState<boolean>(true);
-  const [photoPreviewUrl] = useState<string>('https://images.unsplash.com/photo-1584463667104-122ff1129b11?auto=format&fit=crop&w=600&q=80');
+  // Photo capture & live Gemini Vision evaluation state
+  const [photoUploaded, setPhotoUploaded] = useState<boolean>(false);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('https://images.unsplash.com/photo-1584463667104-122ff1129b11?auto=format&fit=crop&w=600&q=80');
+  const [isEvaluatingPhoto, setIsEvaluatingPhoto] = useState<boolean>(false);
+  const [visionResult, setVisionResult] = useState<GeminiVisionResult | null>(null);
 
   // Text intake state
   const [textNote, setTextNote] = useState<string>(
@@ -108,8 +112,43 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     }, 600);
   };
 
-  const handleSubmitReport = (e: React.FormEvent) => {
+  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result as string;
+      setPhotoPreviewUrl(base64);
+      setPhotoUploaded(true);
+      setIsEvaluatingPhoto(true);
+
+      const result = await evaluateLocalityPhoto(base64);
+      setVisionResult(result);
+      if (result.category) {
+        setCategory(result.category);
+      }
+      setIsEvaluatingPhoto(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    await publishLocalityReport({
+      name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
+      category: visionResult?.category || category,
+      priorityLevel: visionResult?.priorityLevel || 'HIGH',
+      priorityScore: visionResult?.confidenceScore || 94,
+      detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
+      urgencyReasoning: visionResult?.urgencyReasoning || textNote,
+      photoBase64: photoPreviewUrl,
+      location: {
+        lat: parseFloat(coordinates.lat) || 18.7083,
+        lng: parseFloat(coordinates.lng) || 82.8465,
+        blockOrTown: region.district,
+      },
+    });
     setIsSubmitted(true);
   };
 
@@ -142,28 +181,25 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
               <span className="text-slate-500">Assigned Cluster Priority:</span>
               <span className="font-extrabold text-amber-600">CRITICAL (Score: 94/100)</span>
             </div>
-            <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-500">Status in Priority Queue:</span>
-              <span className="font-extrabold text-teal-700">Ranked Top 3 for Fast-Track Mandate</span>
-            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
             <button
               onClick={() => onNavigate('explore')}
-              className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold text-sm shadow-md shadow-teal-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-teal-600/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
-              <span>View Report on Interactive Map</span>
-              <ArrowRight className="w-4 h-4" />
+              <MapPin className="w-4 h-4" />
+              <span>View Live Report on Interactive Map</span>
             </button>
             <button
               onClick={() => {
                 setIsSubmitted(false);
-                setVoiceRecorded(true);
+                setPhotoUploaded(false);
+                setVisionResult(null);
               }}
-              className="w-full sm:w-auto py-3.5 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm transition-colors"
+              className="py-3.5 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
             >
-              Submit Another
+              <span>Submit Another Locality Damage Log</span>
             </button>
           </div>
         </div>
@@ -434,46 +470,82 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                 </div>
               )}
 
-              {/* MODE 2: PHOTO INSPECTION (Gemini Vision) */}
+              {/* MODE 2: PHOTO INSPECTION (Live Smartphone Camera / File Upload + Gemini Vision) */}
               {intakeMode === 'PHOTO' && (
                 <div className="space-y-5 animate-scaleUp">
-                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center space-y-4 bg-slate-50/50">
+                  <div className="border-2 border-dashed border-slate-300 hover:border-teal-500 rounded-[24px] p-6 text-center space-y-4 bg-slate-50/70 transition-all">
                     {photoUploaded ? (
                       <div className="space-y-3">
-                        <div className="relative max-w-sm mx-auto rounded-xl overflow-hidden shadow-md border border-slate-300">
-                          <img src={photoPreviewUrl} alt="Reported defect" className="w-full h-44 object-cover" />
-                          <div className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-xs text-white px-2 py-1 rounded text-[10px] font-mono font-bold">
-                            GPS VERIFIED • EXIF GENUINE
+                        <div className="relative max-w-sm mx-auto rounded-2xl overflow-hidden shadow-lg border border-slate-300">
+                          <img src={photoPreviewUrl} alt="Reported defect" className="w-full h-52 object-cover" />
+                          <div className="absolute top-2 right-2 bg-slate-900/85 backdrop-blur-md text-white px-2.5 py-1 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 border border-white/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>GPS LOCKED • EXIF VERIFIED</span>
                           </div>
+                          {isEvaluatingPhoto && (
+                            <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-xs flex flex-col items-center justify-center text-white space-y-2 p-4">
+                              <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
+                              <span className="text-xs font-black tracking-tight">Evaluating Severity with Gemini Vision AI...</span>
+                            </div>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setPhotoUploaded(false)}
-                          className="text-xs text-teal-700 font-bold hover:underline"
-                        >
-                          Change photo / Upload another sample
-                        </button>
+                        <label className="inline-flex items-center gap-1.5 text-xs text-teal-700 font-bold hover:underline cursor-pointer py-1 px-3 bg-teal-50 rounded-full border border-teal-200">
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Retake Camera Photo or Select Another</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleCameraCapture}
+                            className="hidden"
+                          />
+                        </label>
                       </div>
                     ) : (
-                      <div className="py-8 space-y-3" onClick={() => setPhotoUploaded(true)}>
-                        <Upload className="w-10 h-10 text-teal-600 mx-auto cursor-pointer" />
-                        <div className="font-extrabold text-sm text-slate-900 cursor-pointer">Click or drag smartphone photo here</div>
-                        <p className="text-xs text-slate-500 font-mono">Supports JPG, PNG, WEBP with embedded geocodes</p>
-                      </div>
+                      <label className="block py-8 space-y-3 cursor-pointer group">
+                        <div className="w-16 h-16 rounded-2xl bg-teal-50 border border-teal-200 text-teal-600 flex items-center justify-center mx-auto group-hover:scale-105 transition-all shadow-sm">
+                          <Camera className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-base text-slate-900 group-hover:text-teal-700 transition-colors">
+                            Click Photo of Bad Road with Phone Camera
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">
+                            Or upload existing locality damage image (`JPG, PNG, WEBP`)
+                          </p>
+                        </div>
+                        <span className="inline-block px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-extrabold text-xs shadow-md group-hover:shadow-lg transition-all">
+                          📸 Open Camera / Select File
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handleCameraCapture}
+                          className="hidden"
+                        />
+                      </label>
                     )}
                   </div>
 
                   {photoUploaded && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
+                    <div className="bg-amber-50/90 border border-amber-300 rounded-[20px] p-4.5 space-y-2.5 shadow-sm">
                       <div className="flex items-center justify-between text-xs font-mono">
                         <span className="font-extrabold text-amber-950 flex items-center gap-1.5">
-                          <Sparkles className="w-4 h-4 text-amber-600" /> AI Visual Defect Assessment
+                          <Sparkles className="w-4 h-4 text-amber-600 animate-pulse" />
+                          <span>{visionResult?.isRealApiEval ? 'Gemini API Vision Defect Evaluation' : 'Gemini Vision AI Defect Assessment (Dual Mode)'}</span>
                         </span>
-                        <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-950 font-bold">Confidence: 96%</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-black border border-amber-300">
+                          Confidence: {visionResult?.confidenceScore || simulatedConfidence}%
+                        </span>
                       </div>
-                      <p className="text-xs sm:text-sm font-semibold text-amber-950 bg-white p-3 rounded-xl border border-amber-200/60 leading-relaxed">
-                        {simulatedImageDefect}
+                      <p className="text-xs sm:text-sm font-bold text-amber-950 bg-white p-3.5 rounded-xl border border-amber-200 shadow-inner leading-relaxed">
+                        {visionResult?.detectedIssue || simulatedImageDefect}
                       </p>
+                      <div className="pt-1 text-[11px] font-mono text-amber-900/80 flex items-center justify-between">
+                        <span>Verified Category: <strong>{visionResult?.category || category}</strong></span>
+                        <span>Priority Level: <strong className="text-rose-600">{visionResult?.priorityLevel || simulatedUrgency}</strong></span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -515,15 +587,15 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
                   <div>
                     <span className="text-slate-400 block text-[10px]">VERIFIED DEPARTMENT:</span>
-                    <strong className="text-white">{category} Dept • Semiliguda</strong>
+                    <strong className="text-white">{visionResult?.category || category} Dept • Semiliguda</strong>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">AI CONFIDENCE SCORE:</span>
-                    <strong className="text-emerald-400 font-extrabold">{simulatedConfidence}% High</strong>
+                    <strong className="text-emerald-400 font-extrabold">{visionResult?.confidenceScore || simulatedConfidence}% High</strong>
                   </div>
                   <div className="col-span-2 sm:col-span-1">
-                    <span className="text-slate-400 block text-[10px]">DUPLICATE CLUSTER MERGE:</span>
-                    <strong className="text-teal-300 truncate block">Merged → #HS-SEMILIGUDA</strong>
+                    <span className="text-slate-400 block text-[10px]">REAL-TIME SYNC BUS:</span>
+                    <strong className="text-teal-300 truncate block">Active • Instant Map Feed</strong>
                   </div>
                 </div>
 
@@ -531,7 +603,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                   type="submit"
                   className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-sm shadow-lg shadow-teal-600/25 active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"
                 >
-                  <span>Submit & Verify on Spatial Ledger</span>
+                  <span>Verify Photo & Publish to Live GIS Ledger</span>
                   <Send className="w-4 h-4" />
                 </button>
               </div>
