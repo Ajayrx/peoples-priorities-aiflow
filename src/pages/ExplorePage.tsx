@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import type { Hotspot, Region } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
-import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
+import { subscribeToLiveReports, testCloudFirestoreConnection, type LiveCitizenReport } from '../services/liveCloudBus';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
@@ -84,8 +84,9 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
   const [simulatedPriorityDrop, setSimulatedPriorityDrop] = useState<number>(82); // score reduction
 
-  // Real-time citizen reports state
+  // Real-time citizen reports & cloud sync diagnostic state
   const [liveReports, setLiveReports] = useState<LiveCitizenReport[]>([]);
+  const [isTestingCloud, setIsTestingCloud] = useState<boolean>(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToLiveReports((reports) => {
@@ -227,7 +228,20 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={async () => {
+                setIsTestingCloud(true);
+                const res = await testCloudFirestoreConnection();
+                setIsTestingCloud(false);
+                alert(res.message);
+              }}
+              disabled={isTestingCloud}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+            >
+              <span>{isTestingCloud ? 'Pinging Cloud...' : '🌐 Verify Cloud Sync'}</span>
+            </button>
+
             <button
               onClick={() => {
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(liveReports, null, 2));
@@ -240,7 +254,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               }}
               className="px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
             >
-              <span>Export Ledger JSON ({liveReports.length})</span>
+              <span>Export Ledger ({liveReports.length})</span>
             </button>
           </div>
         </div>
