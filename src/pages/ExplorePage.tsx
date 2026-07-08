@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import type { Hotspot, Region } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
+import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
+import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
 function MapViewController({ center, zoom }: { center: [number, number]; zoom: number }) {
@@ -70,10 +72,21 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
   const [simulatedPriorityDrop, setSimulatedPriorityDrop] = useState<number>(82); // score reduction
 
-  // Filter and sort hotspots
+  // Real-time citizen reports state
+  const [liveReports, setLiveReports] = useState<LiveCitizenReport[]>([]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToLiveReports((reports) => {
+      setLiveReports(reports);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Filter and sort hotspots (2 Demo items + Live Citizen Reports)
   const filteredHotspots = useMemo(() => {
-    if (!isDemoRegion) return [];
-    return MOCK_HOTSPOTS.filter((hs) => {
+    const baseList: Hotspot[] = isDemoRegion ? [...MOCK_HOTSPOTS] : [];
+    const combined = mergeLiveReportsIntoClusters(baseList, liveReports);
+    return combined.filter((hs) => {
       const matchesCategory = selectedCategory === 'ALL' || hs.category === selectedCategory;
       const matchesSearch =
         hs.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -81,11 +94,17 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         hs.category.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     }).sort((a, b) => b.priorityScore - a.priorityScore);
-  }, [isDemoRegion, selectedCategory, searchQuery]);
+  }, [isDemoRegion, selectedCategory, searchQuery, liveReports]);
+
+  useEffect(() => {
+    if (!activeHotspot && filteredHotspots.length > 0) {
+      setActiveHotspot(filteredHotspots[0]);
+    }
+  }, [filteredHotspots, activeHotspot]);
 
   // Categories list for quick filtering pills
   const categories: { id: string; label: string; count?: number }[] = [
-    { id: 'ALL', label: 'All Clusters', count: isDemoRegion ? MOCK_HOTSPOTS.length : 0 },
+    { id: 'ALL', label: 'All Clusters', count: isDemoRegion ? filteredHotspots.length : 0 },
     { id: 'Road', label: 'Roads & Bridges' },
     { id: 'Drainage', label: 'Urban Drainage' },
     { id: 'Healthcare', label: 'Healthcare' },
@@ -212,7 +231,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
           <div className="flex items-center gap-2 shrink-0">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-xs font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span>{isDemoRegion ? `${MOCK_HOTSPOTS.length} Active AI Clusters` : 'No Dataset Loaded'}</span>
+              <span>{isDemoRegion ? `${filteredHotspots.length} Active AI Clusters` : 'No Dataset Loaded'}</span>
             </div>
           </div>
         </div>

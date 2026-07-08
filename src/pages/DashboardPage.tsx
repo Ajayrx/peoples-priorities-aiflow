@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Sliders,
   FileSpreadsheet,
@@ -12,8 +12,10 @@ import {
   TrendingUp,
   CheckCircle2
 } from 'lucide-react';
-import type { Region, UserRole } from '../types';
+import type { Region, UserRole, Hotspot } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
+import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
+import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 
 interface DashboardPageProps {
   region: Region;
@@ -34,16 +36,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
 
   // Selected clusters for action mandates (by Hotspot ID)
   const [selectedMandates, setSelectedMandates] = useState<string[]>(
-    isDemoRegion ? ['hs-semiliguda-road', 'hs-jeypore-drainage'] : []
+    isDemoRegion ? ['hs-semiliguda-road', 'hs-koraput-schools'] : []
   );
 
   // Category filter comparison state: 'ALL' | 'Roads' | 'Schools' | 'Water' | 'Healthcare' | 'Drainage'
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
+  // Real-time citizen reports state
+  const [liveReports, setLiveReports] = useState<LiveCitizenReport[]>([]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToLiveReports((reports) => {
+      setLiveReports(reports);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Recalculate priority scores dynamically based on slider weights
   const dynamicHotspots = useMemo(() => {
-    if (!isDemoRegion) return [];
-    return MOCK_HOTSPOTS.map((hs) => {
+    const baseList: Hotspot[] = isDemoRegion ? [...MOCK_HOTSPOTS] : [];
+    const combined = mergeLiveReportsIntoClusters(baseList, liveReports);
+    return combined.map((hs) => {
       // Base score adjusted by our user slider multipliers vs defaults
       const baseD = hs.priorityBreakdown.demandVelocityMultiplier;
       const baseP = hs.priorityBreakdown.demographicImpactMultiplier;
@@ -66,14 +79,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
       if (categoryFilter === 'ALL') return true;
       return hs.category === categoryFilter;
     }).sort((a, b) => b.dynamicScore - a.dynamicScore);
-  }, [isDemoRegion, demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter]);
+  }, [isDemoRegion, demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter, liveReports]);
 
   // Calculate total citizen demand voices and impacted population for selected mandates
   const { totalDemandVoices, totalBeneficiaries } = useMemo(() => {
     let voices = 0;
     let pop = 0;
     selectedMandates.forEach((id) => {
-      const found = MOCK_HOTSPOTS.find((h) => h.id === id);
+      const found = dynamicHotspots.find((h) => h.id === id);
       if (found) {
         voices += found.metrics.citizenReportCount;
         pop += found.metrics.impactedPopulation;
@@ -83,7 +96,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
       totalDemandVoices: voices,
       totalBeneficiaries: pop,
     };
-  }, [selectedMandates]);
+  }, [selectedMandates, dynamicHotspots]);
 
   const toggleMandateSelection = (id: string) => {
     if (selectedMandates.includes(id)) {

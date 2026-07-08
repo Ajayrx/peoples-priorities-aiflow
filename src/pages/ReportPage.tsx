@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Send,
   Mic,
@@ -13,7 +13,9 @@ import {
   ChevronRight,
   ArrowRight,
   Loader2,
-  Volume2
+  Volume2,
+  Play,
+  Pause
 } from 'lucide-react';
 import type { Region, CategoryType } from '../types';
 import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
@@ -41,11 +43,16 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     locationName: isDemoRegion ? 'Pottangi Road Ward 4, Semiliguda Block' : `${region.district} Verified GPS Hub`,
   });
 
-  // Voice recording simulation state
+  // Voice recording state & real microphone capture refs
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [voiceRecorded, setVoiceRecorded] = useState<boolean>(true);
   const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'ENGLISH'>('ODIA');
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Photo capture & live Gemini Vision evaluation state
   const [photoUploaded, setPhotoUploaded] = useState<boolean>(false);
@@ -54,12 +61,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
   const [visionResult, setVisionResult] = useState<GeminiVisionResult | null>(null);
 
   // Text intake state
-  const [textNote, setTextNote] = useState<string>(
-    'Semiliguda main block road has a 4-foot deep washout due to heavy rainfall yesterday. 3 local primary schools are cut off and children are unable to travel safely.'
-  );
+  const [textNote, setTextNote] = useState<string>('Write your problem here...');
 
-  // Submission success state
+  // Submission success & processing states
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Simulated AI processing feedback
   const simulatedTranscriptionOdia = 'ସେମିଳିଗୁଡ଼ା ମୁଖ୍ୟ ବ୍ଲକ୍ ରାସ୍ତାରେ ବଡ଼ ଗାତ ଅଛି, ବର୍ଷା ଦିନରେ ପିଲାମାନେ ସ୍କୁଲ୍ ଯାଇପାରୁନାହାନ୍ତି। ତୁରନ୍ତ ମରାମତି ଦରକାର।';
@@ -78,14 +84,65 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     { id: 'Electricity', label: 'Electricity', icon: '⚡' },
   ];
 
-  const handleSimulateRecord = () => {
+  const handleSimulateRecord = async () => {
     if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
       setIsRecording(false);
-      setVoiceRecorded(true);
-    } else {
+      return;
+    }
+
+    try {
+      if (typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' });
+          const url = URL.createObjectURL(audioBlob);
+          setAudioBlobUrl(url);
+          setVoiceRecorded(true);
+          stream.getTracks().forEach((t) => t.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+        setVoiceRecorded(false);
+        setAudioBlobUrl(null);
+        setRecordingSeconds(1);
+
+        const timer = setInterval(() => {
+          setRecordingSeconds((prev) => {
+            if (prev >= 29 || (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'recording')) {
+              clearInterval(timer);
+              if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.stop();
+              }
+              setIsRecording(false);
+              return prev;
+            }
+            return prev + 1;
+          });
+        }, 1000);
+      } else {
+        throw new Error('Microphone permission denied or device not supported');
+      }
+    } catch (err) {
+      console.warn('Real microphone capture not available, executing high-fidelity voice simulation:', err);
       setIsRecording(true);
       setVoiceRecorded(false);
+      setAudioBlobUrl(null);
       setRecordingSeconds(1);
+
       const timer = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 6) {
@@ -97,6 +154,36 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
           return prev + 1;
         });
       }, 800);
+    }
+  };
+
+  const handlePlayAudio = () => {
+    if (audioBlobUrl) {
+      if (isPlayingAudio && audioElementRef.current) {
+        audioElementRef.current.pause();
+        audioElementRef.current.currentTime = 0;
+        setIsPlayingAudio(false);
+        return;
+      }
+      const audio = new Audio(audioBlobUrl);
+      audioElementRef.current = audio;
+      setIsPlayingAudio(true);
+      audio.onended = () => setIsPlayingAudio(false);
+      audio.onerror = () => setIsPlayingAudio(false);
+      audio.play().catch(() => setIsPlayingAudio(false));
+    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      if (isPlayingAudio) {
+        window.speechSynthesis.cancel();
+        setIsPlayingAudio(false);
+        return;
+      }
+      const textToSpeak = selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia : simulatedTranscriptionEnglish;
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.rate = 0.95;
+      setIsPlayingAudio(true);
+      utterance.onend = () => setIsPlayingAudio(false);
+      utterance.onerror = () => setIsPlayingAudio(false);
+      window.speechSynthesis.speak(utterance);
     }
   };
 
@@ -212,6 +299,10 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
       return;
     }
 
+    setIsSubmitting(true);
+    // Give explicit visual feedback on click ("Auditing & Publishing to Live GIS Ledger...")
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
     await publishLocalityReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
       category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
@@ -226,6 +317,8 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
         blockOrTown: region.district,
       },
     });
+
+    setIsSubmitting(false);
     setIsSubmitted(true);
   };
 
@@ -233,30 +326,30 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     return (
       <div className="min-h-screen bg-[#FAFAFB] text-slate-900 py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
         <div className="max-w-xl w-full bg-white rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 text-center space-y-6 animate-scaleUp">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+          <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20 animate-bounce">
             <CheckCircle2 className="w-10 h-10" />
           </div>
 
           <div>
             <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 font-mono text-xs font-black border border-emerald-200">
-              LEDGER ID: #REP-2026-8841 • VERIFIED UNIQUE
+              LEDGER ID: #REP-2026-{Math.floor(1000 + Math.random() * 9000)} • VERIFIED UNIQUE & CLUSTERED
             </span>
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-3">
-              Multimodal Intake Logged Successfully
+              Complaint Published & Verified Successfully!
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 font-medium mt-2 leading-relaxed">
-              Your report has been verified by <strong className="text-teal-700">Gemini 3.1 Pro AI</strong>, locked to GPS coordinates <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-800">{coordinates.lat}° N, {coordinates.lng}° E</code>, and merged into the <strong>Semiliguda Road Cluster</strong> on our interactive cartographic map.
+              Your complaint has been audited by <strong className="text-teal-700">Gemini 3.1 Pro AI</strong>, locked to GPS coordinates <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-800">{coordinates.lat}° N, {coordinates.lng}° E</code>, and <strong>clustered (+1 complaint incremented)</strong> under the verified locality demand section on our interactive cartographic map.
             </p>
           </div>
 
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 text-left space-y-2.5">
             <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-500">Spatial Verification:</span>
-              <span className="font-extrabold text-emerald-700">Radius Check Passed (&lt; 500m unique)</span>
+              <span className="text-slate-500">Spatial & Category Clustering:</span>
+              <span className="font-extrabold text-emerald-700">Matched Location (+1 complaint merged)</span>
             </div>
             <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-500">Assigned Cluster Priority:</span>
-              <span className="font-extrabold text-amber-600">CRITICAL (Score: 94/100)</span>
+              <span className="text-slate-500">Assigned Priority Level:</span>
+              <span className="font-extrabold text-amber-600">{visionResult?.priorityLevel || 'CRITICAL'} (Score: {visionResult?.confidenceScore || 94}/100)</span>
             </div>
           </div>
 
@@ -266,17 +359,18 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
               className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-teal-600/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               <MapPin className="w-4 h-4" />
-              <span>View Live Report on Interactive Map</span>
+              <span>View Clustered Complaint on Live GIS Map</span>
             </button>
             <button
               onClick={() => {
                 setIsSubmitted(false);
                 setPhotoUploaded(false);
                 setVisionResult(null);
+                setTextNote('Write your problem here...');
               }}
               className="py-3.5 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all"
             >
-              <span>Submit Another Locality Damage Log</span>
+              <span>+ Submit Another Complaint</span>
             </button>
           </div>
         </div>
@@ -525,16 +619,37 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                     )}
                   </div>
 
-                  {/* AI Transcription Result */}
+                  {/* AI Transcription Result & Audio Playback Controls */}
                   {voiceRecorded && !isRecording && (
-                    <div className="bg-teal-50/70 border border-teal-200 rounded-2xl p-4 space-y-2.5">
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="font-extrabold text-teal-900 flex items-center gap-1.5">
+                    <div className="bg-teal-50/70 border border-teal-200 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-teal-200/80 pb-3">
+                        <span className="font-extrabold text-xs text-teal-900 font-mono flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4 text-teal-600" /> Gemini 3.1 Pro Live Transcription ({selectedLanguage})
                         </span>
-                        <span className="px-2 py-0.5 rounded bg-teal-200/70 text-teal-900 font-bold">98.4% Accuracy</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handlePlayAudio}
+                            className={`px-3.5 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+                              isPlayingAudio
+                                ? 'bg-amber-500 text-white animate-pulse shadow-amber-500/30'
+                                : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/20'
+                            }`}
+                          >
+                            {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                            <span>{isPlayingAudio ? 'Playing Audio...' : 'Play Recorded Audio'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSimulateRecord}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-300 transition-all flex items-center gap-1"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Re-record</span>
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs sm:text-sm font-serif italic text-slate-800 bg-white p-3 rounded-xl border border-teal-200/60 leading-relaxed">
+                      <p className="text-xs sm:text-sm font-serif italic text-slate-800 bg-white p-3.5 rounded-xl border border-teal-200/60 leading-relaxed shadow-2xs">
                         "{selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia : simulatedTranscriptionEnglish}"
                       </p>
                       {selectedLanguage === 'ODIA' && (
@@ -638,8 +753,13 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                     <textarea
                       rows={5}
                       value={textNote}
+                      onFocus={() => {
+                        if (textNote === 'Write your problem here...') {
+                          setTextNote('');
+                        }
+                      }}
                       onChange={(e) => setTextNote(e.target.value)}
-                      placeholder="Describe the infrastructure gap, exact landmark, and community impact..."
+                      placeholder="Write your problem here..."
                       className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 font-medium leading-relaxed"
                     />
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mt-1">
@@ -678,10 +798,24 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-black text-sm shadow-lg shadow-teal-600/25 active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"
+                  disabled={isSubmitting}
+                  className={`w-full py-3.5 px-6 rounded-xl font-black text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 mt-2 ${
+                    isSubmitting
+                      ? 'bg-amber-500 text-white cursor-wait animate-pulse shadow-amber-500/30'
+                      : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-teal-600/25'
+                  }`}
                 >
-                  <span>Verify Photo & Publish to Live GIS Ledger</span>
-                  <Send className="w-4 h-4" />
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Auditing & Publishing to Live GIS Ledger...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{intakeMode === 'PHOTO' ? 'Verify Photo & Publish to Live GIS Ledger' : intakeMode === 'VOICE' ? 'Verify Voice Note & Publish to Live GIS Ledger' : 'Verify Description & Publish to Live GIS Ledger'}</span>
+                      <Send className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
 

@@ -1,6 +1,5 @@
 import type { Hotspot, DatasetHealthRecord } from '../types';
 
-
 export const MOCK_HOTSPOTS: Hotspot[] = [
   {
     id: 'hs-semiliguda-road',
@@ -95,134 +94,6 @@ export const MOCK_HOTSPOTS: Hotspot[] = [
     ],
   },
   {
-    id: 'hs-jeypore-drainage',
-    name: 'Jeypore Town Ward 9 & 10 Severe Waterlogging',
-    category: 'Drainage',
-    location: {
-      center: { lat: 18.8550, lng: 82.5714 },
-      boundingRadiusMeters: 1200,
-      blockOrTown: 'Jeypore',
-      constituency: 'Koraput',
-    },
-    clusterSizeClass: 'medium',
-    metrics: {
-      citizenReportCount: 36,
-      reportGrowthVelocity: '+20% in last 7 days',
-      impactedPopulation: 28500,
-      nearbySchoolsCount: 5,
-      nearbyHealthCentresCount: 2,
-      infrastructureStatus: 'Poor',
-    },
-    existingDevelopmentPlan: {
-      hasProposal: true,
-      schemeName: 'Municipal Urban Drainage Scheme 2025',
-      status: 'Proposed',
-    },
-    priorityLevel: 'HIGH',
-    priorityScore: 78,
-    priorityBreakdown: {
-      demandVelocityMultiplier: 1.20,
-      demographicImpactMultiplier: 1.65,
-      infrastructureGapMultiplier: 1.40,
-      seasonalUrgencyMultiplier: 1.80,
-      aiConfidenceMultiplier: 0.88,
-      existingPlanDiscount: 0.70,
-      finalScore: 78,
-      explanation: 'Chronic monsoon waterlogging submerging low-lying residential wards. Proposal submitted but requires immediate administrative clearance before July rains peak.',
-    },
-    aiSynthesis: {
-      headline: 'Severe urban flooding risk threatening 28,500 citizens across Ward 9 & 10.',
-      reasoning: 'Existing stormwater channels are clogged with silt and non-biodegradable waste, causing 3-foot waterlogging during moderate rainfall.',
-      recommendedAction: 'Expedite technical clearance for Municipal Urban Drainage Scheme and deploy emergency desilting pumps.',
-    },
-    recentReports: [],
-  },
-  {
-    id: 'hs-sunabeda-health',
-    name: 'Sunabeda Sector 3 Health Sub-Centre Upgradation Need',
-    category: 'Healthcare',
-    location: {
-      center: { lat: 18.7240, lng: 82.8360 },
-      boundingRadiusMeters: 1500,
-      blockOrTown: 'Sunabeda',
-      constituency: 'Koraput',
-    },
-    clusterSizeClass: 'medium',
-    metrics: {
-      citizenReportCount: 29,
-      reportGrowthVelocity: '+15% in last 7 days',
-      impactedPopulation: 35000,
-      nearbySchoolsCount: 4,
-      nearbyHealthCentresCount: 1,
-      infrastructureStatus: 'Moderate',
-    },
-    existingDevelopmentPlan: {
-      hasProposal: false,
-    },
-    priorityLevel: 'HIGH',
-    priorityScore: 74,
-    priorityBreakdown: {
-      demandVelocityMultiplier: 1.15,
-      demographicImpactMultiplier: 1.70,
-      infrastructureGapMultiplier: 1.80,
-      seasonalUrgencyMultiplier: 1.20,
-      aiConfidenceMultiplier: 0.91,
-      existingPlanDiscount: 1.00,
-      finalScore: 74,
-      explanation: 'High population density of 35,000 industrial workers and families relying on a single dilapidated health sub-centre lacking maternity beds and oxygen facilities.',
-    },
-    aiSynthesis: {
-      headline: 'Critical primary healthcare gap for 35,000 residents in Sunabeda industrial township.',
-      reasoning: 'Current health sub-centre operates only 6 hours daily with one auxiliary nurse. Emergency cases must travel 22 km to Koraput District Hospital.',
-      recommendedAction: 'Upgrade existing sub-centre to a 30-bed Community Health Centre (CHC) under National Health Mission (NHM).',
-    },
-    recentReports: [],
-  },
-  {
-    id: 'hs-damanjodi-water',
-    name: 'Damanjodi Peripheral Village Drinking Water Crisis',
-    category: 'Water',
-    location: {
-      center: { lat: 18.7750, lng: 82.8900 },
-      boundingRadiusMeters: 2200,
-      blockOrTown: 'Damanjodi',
-      constituency: 'Koraput',
-    },
-    clusterSizeClass: 'small',
-    metrics: {
-      citizenReportCount: 22,
-      reportGrowthVelocity: '-5% in last 7 days',
-      impactedPopulation: 14200,
-      nearbySchoolsCount: 2,
-      nearbyHealthCentresCount: 1,
-      infrastructureStatus: 'Poor',
-    },
-    existingDevelopmentPlan: {
-      hasProposal: true,
-      schemeName: 'Jal Jeevan Mission Overhead Tank & Piped Supply',
-      status: 'In Progress',
-      actionPriority: 'High Demand Resolution Mandate Active',
-    },
-    priorityLevel: 'MEDIUM',
-    priorityScore: 52,
-    priorityBreakdown: {
-      demandVelocityMultiplier: 0.95,
-      demographicImpactMultiplier: 1.35,
-      infrastructureGapMultiplier: 1.90,
-      seasonalUrgencyMultiplier: 1.50,
-      aiConfidenceMultiplier: 0.86,
-      existingPlanDiscount: 0.25,
-      finalScore: 52,
-      explanation: 'Jal Jeevan Mission piped drinking water project is currently underway. Citizen demand remains while pipeline laying completes in peripheral hamlets.',
-    },
-    aiSynthesis: {
-      headline: 'Piped drinking water project sanctioned under JJM; contractor execution requires weekly monitoring.',
-      reasoning: 'Because an overhead water tank directive is already approved and 60% constructed, priority focus shifts to weekly field verification and engineering audit.',
-      recommendedAction: 'Mandate bi-weekly engineering progress audit to ensure completion before summer peak.',
-    },
-    recentReports: [],
-  },
-  {
     id: 'hs-koraput-schools',
     name: 'Koraput Town Government High School Infrastructure Deficit',
     category: 'Schools',
@@ -244,8 +115,8 @@ export const MOCK_HOTSPOTS: Hotspot[] = [
     existingDevelopmentPlan: {
       hasProposal: false,
     },
-    priorityLevel: 'MEDIUM',
-    priorityScore: 64,
+    priorityLevel: 'HIGH',
+    priorityScore: 82,
     priorityBreakdown: {
       demandVelocityMultiplier: 1.10,
       demographicImpactMultiplier: 1.45,
@@ -253,7 +124,7 @@ export const MOCK_HOTSPOTS: Hotspot[] = [
       seasonalUrgencyMultiplier: 1.30,
       aiConfidenceMultiplier: 0.89,
       existingPlanDiscount: 1.00,
-      finalScore: 64,
+      finalScore: 82,
       explanation: 'Leaking roof structure and shortage of STEM laboratory rooms at central municipal school affecting 1,200 enrolled students.',
     },
     aiSynthesis: {
@@ -261,7 +132,32 @@ export const MOCK_HOTSPOTS: Hotspot[] = [
       reasoning: 'Monsoon seepage damages classrooms on the top floor, forcing double shifts and overcrowding.',
       recommendedAction: 'Issue Mo School Abhiyan Fast-Track Directive for structural roof waterproofing and STEM classroom modernization.',
     },
-    recentReports: [],
+    recentReports: [
+      {
+        id: 'rep-201',
+        timestamp: '1 day ago',
+        location: {
+          lat: 18.8135,
+          lng: 82.7125,
+          state: 'Odisha',
+          district: 'Koraput',
+          constituency: 'Koraput',
+          blockOrTown: 'Koraput Town',
+          villageOrWard: 'College Road Ward 7',
+        },
+        category: 'Schools',
+        inputMethod: 'PHOTO',
+        aiProcessing: {
+          imageDefectDetected: 'Severe roof seepage and damaged concrete ceiling in Class 10 section.',
+          extractedKeywords: ['Roof Seepage', 'Classroom Damage', 'Mo School Scheme'],
+          sentimentUrgency: 'HIGH',
+          aiConfidenceScore: 89,
+          aiSummary: 'Citizen photo verified roof concrete spalling directly above student benches.',
+        },
+        verificationStatus: 'VERIFIED',
+        duplicateStatus: 'UNIQUE',
+      }
+    ],
   },
 ];
 
