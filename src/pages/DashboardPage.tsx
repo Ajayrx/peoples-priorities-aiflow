@@ -10,7 +10,8 @@ import {
   Sparkles,
   Users,
   TrendingUp,
-  CheckCircle2
+  CheckCircle2,
+  ShieldCheck
 } from 'lucide-react';
 import type { Region, UserRole, Hotspot } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
@@ -151,6 +152,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
         
+        {/* GIS Ledger Storage Persistence Indicator */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-4 shadow-md border border-slate-700/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-teal-500/20 border border-teal-500/40 text-teal-400 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-teal-300">gis persistence engine active</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">IndexedDB + Cloud Sync</span>
+              </div>
+              <p className="text-xs text-slate-300 font-medium mt-0.5">
+                All citizen intakes (`{liveReports.length} records collected`) are safely logged in local high-capacity IndexedDB Ledger.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(liveReports, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `peoples_priorities_gis_ledger_${new Date().toISOString().slice(0, 10)}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
+            >
+              <span>Export Ledger JSON ({liveReports.length})</span>
+            </button>
+          </div>
+        </div>
+
         {/* Role Switcher Pills Strip */}
         <div className="bg-white rounded-[24px] border border-slate-200/90 p-3 sm:p-4 shadow-md overflow-x-auto">
           <div className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider mb-2.5 px-1">
