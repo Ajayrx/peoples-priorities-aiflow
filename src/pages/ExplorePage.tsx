@@ -61,6 +61,18 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
   // Active Tab inside the 7-Tab Hotspot Details Drawer (1 to 7)
   const [activeTab, setActiveTab] = useState<number>(1);
+  const [hasClosedDrawer, setHasClosedDrawer] = useState<boolean>(false);
+
+  const handleSelectHotspot = (hs: Hotspot) => {
+    setActiveHotspot(hs);
+    setActiveTab(1);
+    setHasClosedDrawer(false);
+  };
+
+  const handleCloseDrawer = () => {
+    setActiveHotspot(null);
+    setHasClosedDrawer(true);
+  };
 
   // Map GIS Layer Toggles
   const [showCitizenReports, setShowCitizenReports] = useState<boolean>(true);
@@ -97,10 +109,10 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   }, [isDemoRegion, selectedCategory, searchQuery, liveReports]);
 
   useEffect(() => {
-    if (!activeHotspot && filteredHotspots.length > 0) {
+    if (!activeHotspot && filteredHotspots.length > 0 && !hasClosedDrawer) {
       setActiveHotspot(filteredHotspots[0]);
     }
-  }, [filteredHotspots, activeHotspot]);
+  }, [filteredHotspots, activeHotspot, hasClosedDrawer]);
 
   // Categories list for quick filtering pills
   const categories: { id: string; label: string; count?: number }[] = [
@@ -380,8 +392,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                           radius={isSelected ? radiusSize + 6 : radiusSize}
                           eventHandlers={{
                             click: () => {
-                              setActiveHotspot(hs);
-                              setActiveTab(1); // Reset drawer to overview
+                              handleSelectHotspot(hs);
                             },
                           }}
                           pathOptions={{
@@ -419,8 +430,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                               <p className="text-xs text-slate-600 mb-3 font-medium">{hs.aiSynthesis.headline}</p>
                               <button
                                 onClick={() => {
-                                  setActiveHotspot(hs);
-                                  setActiveTab(1);
+                                  handleSelectHotspot(hs);
                                 }}
                                 className="w-full py-1.5 px-3 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs"
                               >
@@ -523,10 +533,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                   return (
                     <div
                       key={hs.id}
-                      onClick={() => {
-                        setActiveHotspot(hs);
-                        setActiveTab(1); // Open tab 1
-                      }}
+                      onClick={() => handleSelectHotspot(hs)}
                       className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
                         isSelected
                           ? 'bg-teal-50/90 border-teal-500 shadow-md ring-1 ring-teal-500/30'
@@ -594,7 +601,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         <div className="fixed inset-0 z-[600] overflow-hidden flex justify-end">
           {/* Backdrop */}
           <div
-            onClick={() => setActiveHotspot(null)}
+            onClick={handleCloseDrawer}
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
           />
 
@@ -621,7 +628,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               </div>
 
               <button
-                onClick={() => setActiveHotspot(null)}
+                onClick={handleCloseDrawer}
                 className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
@@ -1068,7 +1075,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between text-xs font-mono text-slate-500">
               <span>Cluster ID: {activeHotspot.id}</span>
               <button
-                onClick={() => setActiveHotspot(null)}
+                onClick={handleCloseDrawer}
                 className="px-4 py-1.5 rounded-lg bg-slate-900 text-white font-sans font-bold hover:bg-slate-800 transition-colors"
               >
                 Close Drawer
