@@ -111,6 +111,12 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
   let unsubFirestore: (() => void) | null = null;
   const db = getSafeFirestoreInstance();
 
+  const emitMergedReports = (cloudReports: LiveCitizenReport[] = []) => {
+    const local = getLocalLiveReports();
+    const combined = [...cloudReports, ...local.filter(l => !cloudReports.some(c => c.id === l.id || c.name === l.name))];
+    onUpdate(combined);
+  };
+
   if (db) {
     try {
       const q = query(collection(db, 'citizen_reports'), orderBy('createdAt', 'desc'), limit(50));
@@ -132,26 +138,25 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
             isRealCloudItem: true,
           });
         });
-        // Merge cloud with local
-        const local = getLocalLiveReports();
-        const combined = [...cloudReports, ...local.filter(l => !cloudReports.some(c => c.id === l.id))];
-        onUpdate(combined);
+        emitMergedReports(cloudReports);
       }, (err) => {
-        console.warn('Firestore snapshot error:', err);
+        console.warn('Firestore snapshot error (check database security rules):', err);
+        emitMergedReports([]);
       });
     } catch (e) {
       console.warn('Error setting up Firestore subscription:', e);
+      emitMergedReports([]);
     }
   }
 
   // Local event listeners
   const handleLocalEvent = () => {
-    onUpdate(getLocalLiveReports());
+    emitMergedReports([]);
   };
 
   const handleBroadcast = (event: MessageEvent) => {
     if (event.data?.type === 'NEW_REPORT') {
-      onUpdate(getLocalLiveReports());
+      emitMergedReports([]);
     }
   };
 
@@ -162,7 +167,7 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
   }
 
   // Initial trigger
-  onUpdate(getLocalLiveReports());
+  emitMergedReports([]);
 
   return () => {
     if (unsubFirestore) unsubFirestore();
