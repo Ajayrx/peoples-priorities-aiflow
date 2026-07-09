@@ -170,7 +170,7 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
                   Dataset Available &amp; Active
                 </h4>
                 <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
-                  Full dataset loaded for <strong>Odisha → Koraput PC</strong> (`Semiliguda`, `Damanjodi`). Includes <strong>1,842 reports, 14 hotspots, and real-time multi-factor scoring</strong>.
+                  Full dataset loaded for <strong>Odisha → Koraput PC</strong> (`Semiliguda`, `Damanjodi`). Includes <strong>verified community intakes, active hotspots, and real-time multi-factor scoring</strong>.
                 </p>
               </div>
             </div>

@@ -3,7 +3,6 @@ import {
   Sliders,
   FileSpreadsheet,
   Download,
-  Radio,
   UserCheck,
   RefreshCw,
   ArrowRight,
@@ -123,11 +122,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-mono text-xs font-bold">
-                <Radio className="w-3.5 h-3.5 text-teal-600 animate-pulse" />
-                <span>EXPERIENCE 5</span>
-              </span>
-              <span className="text-xs font-mono text-slate-400 font-bold">•</span>
               <span className="text-xs font-mono font-bold text-slate-600">
                 ACTIVE CANVAS: <strong className="text-slate-900">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
               </span>

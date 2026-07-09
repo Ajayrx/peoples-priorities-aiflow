@@ -131,27 +131,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
               </button>
             </div>
 
-            {/* Key Metric Pills — Off-White / Cream & Teal / Green / Amber */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-6 border-t border-slate-200 text-center sm:text-left">
-              <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
-                <div className="text-xl sm:text-3xl font-extrabold text-slate-900 font-mono">
-                  {isDemoRegion ? '1,842' : '0'}
-                </div>
-                <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5">Verified Citizen Inputs</div>
-              </div>
-              <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
-                <div className="text-xl sm:text-3xl font-extrabold text-teal-700 font-mono">
-                  {isDemoRegion ? '91.4%' : 'N/A'}
-                </div>
-                <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5">Mean AI Confidence</div>
-              </div>
-              <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs">
-                <div className="text-xl sm:text-3xl font-extrabold text-amber-600 font-mono">
-                  {isDemoRegion ? '4' : '0'}
-                </div>
-                <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5">Critical Hotspots</div>
-              </div>
-            </div>
           </div>
 
           {/* Right Hero Interactive Radar Preview — Fully Converted to Clean Light/White Studio Theme! */}

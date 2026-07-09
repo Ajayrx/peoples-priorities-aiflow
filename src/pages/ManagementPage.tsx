@@ -5,7 +5,6 @@ import {
   RefreshCw,
   Upload,
   ShieldCheck,
-  Radio,
   Layers,
   Activity,
   History,
@@ -75,11 +74,6 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-mono text-xs font-bold">
-                <Radio className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                <span>EXPERIENCE 6</span>
-              </span>
-              <span className="text-xs font-mono text-slate-400 font-bold">•</span>
               <span className="text-xs font-mono font-bold text-slate-600">
                 PIPELINE STATUS: <strong className="text-emerald-700">🟢 5 Datasets Online & Synchronized</strong>
               </span>

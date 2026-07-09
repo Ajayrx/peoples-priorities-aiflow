@@ -21,13 +21,12 @@ import {
   X,
   Eye,
   Building2,
-  Radio,
   FileSpreadsheet,
   Download
 } from 'lucide-react';
 import type { Hotspot, Region } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
-import { subscribeToLiveReports, testCloudFirestoreConnection, type LiveCitizenReport } from '../services/liveCloudBus';
+import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
@@ -54,24 +53,19 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   // Search query inside the sidebar list
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Active Hotspot selected for inspection in the 7-Tab Drawer
-  const [activeHotspot, setActiveHotspot] = useState<Hotspot | null>(
-    isDemoRegion && MOCK_HOTSPOTS.length > 0 ? MOCK_HOTSPOTS[0] : null
-  );
+  // Active Hotspot selected for inspection in the 7-Tab Drawer (null initially so user sees full interactive map)
+  const [activeHotspot, setActiveHotspot] = useState<Hotspot | null>(null);
 
   // Active Tab inside the 7-Tab Hotspot Details Drawer (1 to 7)
   const [activeTab, setActiveTab] = useState<number>(1);
-  const [hasClosedDrawer, setHasClosedDrawer] = useState<boolean>(false);
 
   const handleSelectHotspot = (hs: Hotspot) => {
     setActiveHotspot(hs);
     setActiveTab(1);
-    setHasClosedDrawer(false);
   };
 
   const handleCloseDrawer = () => {
     setActiveHotspot(null);
-    setHasClosedDrawer(true);
   };
 
   // Map GIS Layer Toggles
@@ -84,9 +78,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
   const [simulatedPriorityDrop, setSimulatedPriorityDrop] = useState<number>(82); // score reduction
 
-  // Real-time citizen reports & cloud sync diagnostic state
+  // Real-time citizen reports state
   const [liveReports, setLiveReports] = useState<LiveCitizenReport[]>([]);
-  const [isTestingCloud, setIsTestingCloud] = useState<boolean>(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToLiveReports((reports) => {
@@ -109,11 +102,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
     }).sort((a, b) => b.priorityScore - a.priorityScore);
   }, [isDemoRegion, selectedCategory, searchQuery, liveReports]);
 
-  useEffect(() => {
-    if (!activeHotspot && filteredHotspots.length > 0 && !hasClosedDrawer) {
-      setActiveHotspot(filteredHotspots[0]);
-    }
-  }, [filteredHotspots, activeHotspot, hasClosedDrawer]);
 
   // Categories list for quick filtering pills
   const categories: { id: string; label: string; count?: number }[] = [
@@ -176,11 +164,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 font-mono text-xs font-bold">
-                <Radio className="w-3.5 h-3.5 text-teal-600 animate-pulse" />
-                <span>EXPERIENCE 2 & 4</span>
-              </span>
-              <span className="text-xs font-mono text-slate-400 font-bold">•</span>
               <span className="text-xs font-mono font-bold text-slate-600">
                 ACTIVE CANVAS: <strong className="text-slate-900">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
               </span>
@@ -229,19 +212,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={async () => {
-                setIsTestingCloud(true);
-                const res = await testCloudFirestoreConnection();
-                setIsTestingCloud(false);
-                alert(res.message);
-              }}
-              disabled={isTestingCloud}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs"
-            >
-              <span>{isTestingCloud ? 'Pinging Cloud...' : '🌐 Verify Cloud Sync'}</span>
-            </button>
-
             <button
               onClick={() => {
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(liveReports, null, 2));
