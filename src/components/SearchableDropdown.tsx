@@ -8,6 +8,7 @@ interface SearchableDropdownProps {
   onChange: (newValue: string) => void;
   placeholder?: string;
   badgeText?: (opt: string) => string | null;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
@@ -17,17 +18,23 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
   onChange,
   placeholder = 'Type keyword to search...',
   badgeText,
+  onOpenChange,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const toggleOpen = (newVal: boolean) => {
+    setIsOpen(newVal);
+    if (onOpenChange) onOpenChange(newVal);
+  };
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+        toggleOpen(false);
       }
     };
     if (isOpen) {
@@ -52,19 +59,26 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
   );
 
   return (
-    <div className="relative w-full select-none" ref={containerRef}>
-      <label className="block text-[11px] sm:text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+    <div 
+      className={`relative w-full select-none transition-all duration-300 ${
+        isOpen ? 'z-[9999] transform scale-[1.02]' : 'z-10'
+      }`} 
+      ref={containerRef}
+    >
+      <label className={`block text-[11px] sm:text-xs font-extrabold uppercase tracking-wider mb-1.5 transition-colors ${
+        isOpen ? 'text-teal-700' : 'text-slate-700'
+      }`}>
         {label}
       </label>
 
       {/* Trigger Button */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => toggleOpen(!isOpen)}
         className={`w-full px-3.5 py-2.5 rounded-2xl bg-white border text-left flex items-center justify-between gap-2 transition-all shadow-sm ${
           isOpen
-            ? 'border-teal-600 ring-2 ring-teal-600/20 bg-teal-50/20'
-            : 'border-slate-300 hover:border-slate-400'
+            ? 'border-teal-600 ring-4 ring-teal-600/20 bg-teal-50/30 shadow-lg'
+            : 'border-slate-300 hover:border-slate-400 hover:shadow-md'
         }`}
       >
         <span className="text-xs sm:text-sm font-bold text-slate-900 truncate">
@@ -77,11 +91,11 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
         />
       </button>
 
-      {/* Popout Searchable Dropdown List — Responsive Popout anchored cleanly */}
+      {/* Popout Searchable Dropdown List — Apple Maps style floating search card */}
       {isOpen && (
-        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white/95 backdrop-blur-2xl border-2 border-slate-300 rounded-2xl shadow-2xl overflow-hidden animate-fadeIn max-h-[260px] sm:max-h-[300px] flex flex-col">
+        <div className="absolute z-[9999] left-0 right-0 mt-2 bg-white border-2 border-teal-500/90 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.65)] overflow-hidden animate-scaleUp max-h-[280px] sm:max-h-[320px] flex flex-col will-change-transform">
           {/* Sticky Search Bar */}
-          <div className="p-2 border-b border-slate-200 bg-stone-50/90 sticky top-0 z-10 flex items-center gap-2">
+          <div className="p-2.5 border-b border-slate-100/90 bg-stone-50/95 sticky top-0 z-10 flex items-center gap-2">
             <Search className="w-4 h-4 text-teal-600 shrink-0 ml-1.5" />
             <input
               ref={inputRef}
@@ -103,8 +117,8 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
             )}
           </div>
 
-          {/* Options List */}
-          <div className="overflow-y-auto flex-1 p-1 space-y-0.5 divide-y divide-slate-100">
+          {/* Options List — Hardware accelerated smooth scrolling + overscroll containment */}
+          <div className="overflow-y-auto flex-1 p-1.5 space-y-0.5 divide-y divide-slate-100/80 overscroll-contain scroll-smooth [WebkitOverflowScrolling:touch] will-change-scroll transform translate-z-0">
             {filteredOptions.length > 0 ? (
               filteredOptions.map((opt) => {
                 const isSelected = opt === value;
@@ -115,11 +129,11 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                     type="button"
                     onClick={() => {
                       onChange(opt);
-                      setIsOpen(false);
+                      toggleOpen(false);
                     }}
-                    className={`w-full px-3 py-2.5 rounded-xl text-left flex items-center justify-between gap-2 transition-colors text-xs sm:text-sm font-bold ${
+                    className={`w-full px-3.5 py-2.5 rounded-2xl text-left flex items-center justify-between gap-2 transition-all text-xs sm:text-sm font-bold ${
                       isSelected
-                        ? 'bg-teal-600 text-white shadow-xs'
+                        ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30'
                         : 'text-slate-800 hover:bg-teal-50 hover:text-teal-900'
                     }`}
                   >
@@ -127,7 +141,7 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                       <span>{opt}</span>
                       {badge && (
                         <span
-                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full font-bold ${
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
                             isSelected
                               ? 'bg-teal-700 text-teal-100 border border-teal-500'
                               : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
@@ -142,7 +156,7 @@ export const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
                 );
               })
             ) : (
-              <div className="p-4 text-center text-xs text-slate-500 font-medium">
+              <div className="p-5 text-center text-xs text-slate-500 font-medium">
                 No matching options found for "{searchQuery}".
               </div>
             )}

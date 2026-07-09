@@ -24,6 +24,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
 
   const isDemoRegion = region.state === 'Odisha' && region.district === 'Koraput District' && region.constituency.includes('Koraput PC');
 
+  const cleanConstituencyName = region.constituency.replace(' (Demo Region)', '');
+  const displayConstituencyTitle = cleanConstituencyName.includes('PC')
+    ? cleanConstituencyName.replace(' PC', ' Parliamentary Constituency')
+    : `${cleanConstituencyName} Parliamentary Constituency`;
+
   return (
     <div className="min-h-screen bg-[#FAFAFB] text-slate-900 overflow-x-hidden pb-12 sm:pb-8">
       {/* Layer 2: Edge-to-Edge Full Screen Live Status Bar — Running across left to right above Hero */}
@@ -332,7 +337,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
       {/* Footer CTA — Cream / White Theme */}
       <footer className="py-14 px-4 text-center max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center space-y-5">
-          <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Ready to Explore Koraput Parliamentary Constituency?</h3>
+          <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Ready to Explore {displayConstituencyTitle}?</h3>
           <p className="text-slate-600 text-sm max-w-md font-medium">
             Experience the 65% cartographic viewport, deep evidence tabs, and real-time civic intelligence.
           </p>

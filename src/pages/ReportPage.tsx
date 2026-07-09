@@ -6,7 +6,6 @@ import {
   FileText,
   MapPin,
   CheckCircle2,
-  ShieldCheck,
   RefreshCw,
   Sparkles,
   ChevronRight,
@@ -14,7 +13,10 @@ import {
   Loader2,
   Volume2,
   Play,
-  Pause
+  Pause,
+  Square,
+  Edit3,
+  Check
 } from 'lucide-react';
 import type { Region, CategoryType } from '../types';
 import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
@@ -46,12 +48,16 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [voiceRecorded, setVoiceRecorded] = useState<boolean>(true);
-  const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'ENGLISH'>('ODIA');
+  const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'HINDI' | 'ENGLISH'>('ODIA');
+  const [customVoiceText, setCustomVoiceText] = useState<string>('');
+  const [isEditingTranscript, setIsEditingTranscript] = useState<boolean>(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const speechRecognitionRef = useRef<any>(null);
+  const recordingIntervalRef = useRef<any>(null);
 
   // Photo capture & live Gemini Vision evaluation state
   const [photoUploaded, setPhotoUploaded] = useState<boolean>(false);
@@ -66,10 +72,19 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Simulated AI processing feedback
+  // Simulated AI processing feedback & Multilingual Transcriptions
   const simulatedTranscriptionOdia = 'ସେମିଳିଗୁଡ଼ା ମୁଖ୍ୟ ବ୍ଲକ୍ ରାସ୍ତାରେ ବଡ଼ ଗାତ ଅଛି, ବର୍ଷା ଦିନରେ ପିଲାମାନେ ସ୍କୁଲ୍ ଯାଇପାରୁନାହାନ୍ତି। ତୁରନ୍ତ ମରାମତି ଦରକାର।';
+  const simulatedTranscriptionHindi = 'सेमीलीगुड़ा मुख्य ब्लॉक सड़क पर भारी गड्ढे और जलभराव है, मानसून के दौरान बच्चों को स्कूल जाने में भारी परेशानी होती है। तुरंत मरम्मत की आवश्यकता है।';
   const simulatedTranscriptionEnglish = 'Semiliguda main block road has severe potholes and a 4-foot washout, during monsoon children cannot go to school. Urgent repair needed immediately.';
   
+  const activeTranscriptText = customVoiceText.trim() !== ''
+    ? customVoiceText
+    : selectedLanguage === 'ODIA'
+    ? simulatedTranscriptionOdia
+    : selectedLanguage === 'HINDI'
+    ? simulatedTranscriptionHindi
+    : simulatedTranscriptionEnglish;
+
   const simulatedImageDefect = 'Gemini 3.1 Pro Vision Defect Detection: Severe structural erosion & collapsed box culvert across 15 meters. Water velocity hazard identified.';
   const simulatedConfidence = 96;
   const simulatedUrgency = 'CRITICAL';
@@ -83,15 +98,69 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     { id: 'Electricity', label: 'Electricity', icon: '⚡' },
   ];
 
+  const handleStopRecording = () => {
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch (e) {
+        console.warn('Speech recognition stop warning:', e);
+      }
+    }
+    setIsRecording(false);
+    setVoiceRecorded(true);
+  };
+
   const handleSimulateRecord = async () => {
     if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
+      handleStopRecording();
       return;
     }
 
+    setCustomVoiceText('');
+    setIsEditingTranscript(false);
+    setIsRecording(true);
+    setVoiceRecorded(false);
+    setAudioBlobUrl(null);
+    setRecordingSeconds(1);
+
+    // 1. Launch real Web Speech Recognition if supported by browser
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        speechRecognitionRef.current = recognition;
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = selectedLanguage === 'ODIA' ? 'or-IN' : selectedLanguage === 'HINDI' ? 'hi-IN' : 'en-IN';
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+          if (currentTranscript.trim()) {
+            setCustomVoiceText(currentTranscript);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition warning:', event.error);
+        };
+
+        recognition.start();
+      }
+    } catch (speechErr) {
+      console.warn('SpeechRecognition API unavailable or blocked, falling back to audio capture:', speechErr);
+    }
+
+    // 2. Start real MediaRecorder for audio capture or fallback simulation timer
     try {
       if (typeof window !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -109,24 +178,16 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' });
           const url = URL.createObjectURL(audioBlob);
           setAudioBlobUrl(url);
-          setVoiceRecorded(true);
           stream.getTracks().forEach((t) => t.stop());
         };
 
         mediaRecorder.start();
-        setIsRecording(true);
-        setVoiceRecorded(false);
-        setAudioBlobUrl(null);
-        setRecordingSeconds(1);
 
-        const timer = setInterval(() => {
+        if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = setInterval(() => {
           setRecordingSeconds((prev) => {
-            if (prev >= 29 || (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'recording')) {
-              clearInterval(timer);
-              if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                mediaRecorderRef.current.stop();
-              }
-              setIsRecording(false);
+            if (prev >= 59 || (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'recording')) {
+              handleStopRecording();
               return prev;
             }
             return prev + 1;
@@ -137,17 +198,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
       }
     } catch (err) {
       console.warn('Real microphone capture not available, executing high-fidelity voice simulation:', err);
-      setIsRecording(true);
-      setVoiceRecorded(false);
-      setAudioBlobUrl(null);
-      setRecordingSeconds(1);
-
-      const timer = setInterval(() => {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 6) {
-            clearInterval(timer);
-            setIsRecording(false);
-            setVoiceRecorded(true);
+            handleStopRecording();
             return 7;
           }
           return prev + 1;
@@ -176,8 +231,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
         setIsPlayingAudio(false);
         return;
       }
-      const textToSpeak = selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia : simulatedTranscriptionEnglish;
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      const utterance = new SpeechSynthesisUtterance(activeTranscriptText);
       utterance.rate = 0.95;
       setIsPlayingAudio(true);
       utterance.onend = () => setIsPlayingAudio(false);
@@ -307,8 +361,8 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
       category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
       priorityLevel: visionResult?.priorityLevel || 'HIGH',
       priorityScore: visionResult?.confidenceScore || 94,
-      detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
-      urgencyReasoning: visionResult?.urgencyReasoning || textNote,
+      detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
+      urgencyReasoning: visionResult?.urgencyReasoning || (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
       photoBase64: photoPreviewUrl,
       location: {
         lat: parseFloat(coordinates.lat) || 18.7083,
@@ -497,18 +551,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                 })}
               </div>
             </div>
-
-            {/* 4-Layer Security Trust Badge */}
-            <div className="bg-emerald-50 rounded-[24px] border border-emerald-200 p-4.5 flex items-start gap-3">
-              <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-extrabold text-xs text-emerald-950">Active Anti-Duplicate & Fraud Filter</h4>
-                <p className="text-[11px] text-emerald-900/80 font-medium leading-relaxed mt-0.5">
-                  Your report undergoes EXIF timestamp verification and spatial DBSCAN clustering within a 500-meter threshold before merging into the MP LAD priority queue.
-                </p>
-              </div>
-            </div>
-
           </div>
 
           {/* RIGHT COLUMN (7 cols): Multimodal Intake Selector & Live AI Processing Preview */}
@@ -557,18 +599,25 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                     <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <Volume2 className="w-4 h-4 text-teal-600" /> Transcription Language:
                     </span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <button
                         type="button"
                         onClick={() => setSelectedLanguage('ODIA')}
-                        className={`px-3 py-1 rounded-md text-xs font-extrabold transition-all ${selectedLanguage === 'ODIA' ? 'bg-teal-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200'}`}
+                        className={`px-3 py-1 rounded-md text-xs font-extrabold transition-all ${selectedLanguage === 'ODIA' ? 'bg-teal-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
                       >
                         Odia (ଓଡ଼ିଆ)
                       </button>
                       <button
                         type="button"
+                        onClick={() => setSelectedLanguage('HINDI')}
+                        className={`px-3 py-1 rounded-md text-xs font-extrabold transition-all ${selectedLanguage === 'HINDI' ? 'bg-teal-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        Hindi (हिंदी)
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setSelectedLanguage('ENGLISH')}
-                        className={`px-3 py-1 rounded-md text-xs font-extrabold transition-all ${selectedLanguage === 'ENGLISH' ? 'bg-teal-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200'}`}
+                        className={`px-3 py-1 rounded-md text-xs font-extrabold transition-all ${selectedLanguage === 'ENGLISH' ? 'bg-teal-600 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
                       >
                         English
                       </button>
@@ -596,19 +645,29 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                         {isRecording ? 'Recording Voice Note... Speak Clearly' : voiceRecorded ? 'Voice Note Recorded Successfully' : 'Click Microphone to Record'}
                       </h4>
                       <p className="text-xs font-mono text-slate-500 mt-1">
-                        {isRecording ? `00:0${recordingSeconds} / 00:30 max` : voiceRecorded ? 'Duration: 00:14s • Format: WAV / Opus 16kHz' : 'Supports Odia dialect & English technical terms'}
+                        {isRecording ? `00:${recordingSeconds < 10 ? '0' + recordingSeconds : recordingSeconds} / 01:00 max` : voiceRecorded ? 'Duration: 00:14s • Format: WAV / Opus 16kHz' : 'Supports Odia dialect, Hindi & English technical terms'}
                       </p>
                     </div>
 
                     {isRecording && (
-                      <div className="flex items-center justify-center gap-1 h-6">
-                        {[40, 70, 30, 90, 60, 80, 50, 100, 35, 65].map((h, idx) => (
-                          <div
-                            key={idx}
-                            className="w-1.5 bg-teal-600 rounded-full animate-pulse"
-                            style={{ height: `${h}%`, animationDelay: `${idx * 100}ms` }}
-                          />
-                        ))}
+                      <div className="space-y-4 pt-2">
+                        <div className="flex items-center justify-center gap-1 h-6">
+                          {[40, 70, 30, 90, 60, 80, 50, 100, 35, 65].map((h, idx) => (
+                            <div
+                              key={idx}
+                              className="w-1.5 bg-rose-600 rounded-full animate-pulse"
+                              style={{ height: `${h}%`, animationDelay: `${idx * 100}ms` }}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStopRecording}
+                          className="px-6 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm shadow-xl shadow-rose-600/30 flex items-center justify-center gap-2.5 mx-auto animate-bounce"
+                        >
+                          <Square className="w-4 h-4 fill-current" />
+                          <span>Stop Recording & Transcribe Voice</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -620,7 +679,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                         <span className="font-extrabold text-xs text-teal-900 font-mono flex items-center gap-1.5">
                           <Sparkles className="w-4 h-4 text-teal-600" /> Gemini 3.1 Pro Live Transcription ({selectedLanguage})
                         </span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
                             onClick={handlePlayAudio}
@@ -643,10 +702,49 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                           </button>
                         </div>
                       </div>
-                      <p className="text-xs sm:text-sm font-serif italic text-slate-800 bg-white p-3.5 rounded-xl border border-teal-200/60 leading-relaxed shadow-2xs">
-                        "{selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia : simulatedTranscriptionEnglish}"
-                      </p>
+
+                      {isEditingTranscript ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={customVoiceText || activeTranscriptText}
+                            onChange={(e) => setCustomVoiceText(e.target.value)}
+                            className="w-full text-xs sm:text-sm font-serif italic text-slate-800 bg-white p-3.5 rounded-xl border-2 border-teal-500 focus:outline-none leading-relaxed shadow-sm min-h-[80px]"
+                            placeholder="Edit or verify what you spoke..."
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingTranscript(false)}
+                              className="px-4 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Confirm & Save Transcript
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative group">
+                          <p className="text-xs sm:text-sm font-serif italic text-slate-800 bg-white p-3.5 rounded-xl border border-teal-200/60 leading-relaxed shadow-2xs pr-24">
+                            "{activeTranscriptText}"
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!customVoiceText) setCustomVoiceText(activeTranscriptText);
+                              setIsEditingTranscript(true);
+                            }}
+                            className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 opacity-90 hover:opacity-100 transition-opacity border border-slate-300 shadow-2xs"
+                          >
+                            <Edit3 className="w-3 h-3" /> Edit Text
+                          </button>
+                        </div>
+                      )}
+
                       {selectedLanguage === 'ODIA' && (
+                        <div className="pt-1 text-[11px] font-mono text-slate-600">
+                          <strong>English Synthesis:</strong> "{simulatedTranscriptionEnglish}"
+                        </div>
+                      )}
+                      {selectedLanguage === 'HINDI' && (
                         <div className="pt-1 text-[11px] font-mono text-slate-600">
                           <strong>English Synthesis:</strong> "{simulatedTranscriptionEnglish}"
                         </div>

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { Region } from '../types';
 import { MOCK_DATASET_HEALTH } from '../data/mockData';
+import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
 
 interface ManagementPageProps {
   region: Region;
@@ -22,6 +23,17 @@ interface ManagementPageProps {
 
 export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNavigate }) => {
   const isDemoRegion = region.constituency.includes('Koraput');
+
+  const [liveReports, setLiveReports] = React.useState<LiveCitizenReport[]>([]);
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeToLiveReports((reports) => {
+      setLiveReports(reports);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const totalGeoRecords = liveReports.length + MOCK_DATASET_HEALTH.reduce((sum, d) => sum + d.recordsCount, 0);
 
   // Recalibration pipeline execution simulation
   const [isRecalibrating, setIsRecalibrating] = useState<boolean>(false);
@@ -106,7 +118,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
             </div>
             <div>
               <div className="text-[11px] font-mono font-bold text-slate-400 uppercase">Total Geo Records</div>
-              <div className="text-xl font-mono font-black text-slate-900 mt-0.5">1,558</div>
+              <div className="text-xl font-mono font-black text-slate-900 mt-0.5">{totalGeoRecords.toLocaleString()}</div>
             </div>
           </div>
 
@@ -233,7 +245,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
                   <span>DBSCAN & Multi-Factor Recalibration</span>
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Triggers full backend re-clustering across all 1,558 records and recalculates formula weights
+                  Triggers full backend re-clustering across all {totalGeoRecords.toLocaleString()} records and recalculates formula weights
                 </p>
               </div>
 
@@ -249,7 +261,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
                     <span className={pipelineStep >= 1 ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
                       {pipelineStep >= 1 ? '✓' : '1.'}
                     </span>
-                    <span>Ingesting 1,558 spatial vector items & EXIF hashes</span>
+                    <span>Ingesting {totalGeoRecords.toLocaleString()} spatial vector items & EXIF hashes</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-300">
                     <span className={pipelineStep >= 2 ? 'text-emerald-400 font-bold' : 'text-slate-600'}>

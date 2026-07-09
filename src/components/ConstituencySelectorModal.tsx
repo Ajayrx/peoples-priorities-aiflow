@@ -25,6 +25,7 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
   const [selectedConstituency, setSelectedConstituency] = useState<string>(currentRegion.constituency);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // Synchronize state when modal opens so clicking backdrop defaults back to earlier selected constituency!
   useEffect(() => {
@@ -33,7 +34,14 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
       setSelectedDistrict(currentRegion.district);
       setSelectedConstituency(currentRegion.constituency);
       setLocationStatus(null);
+      setOpenDropdown(null);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen, currentRegion]);
 
   if (!isOpen) return null;
@@ -81,7 +89,9 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
       />
 
       {/* Center Oval / Rounded-Capsule Pop Design (rounded-[36px] sm:rounded-[48px], center scaleUp popup) */}
-      <div className="relative z-[90] w-full max-w-2xl max-h-[88vh] bg-white/95 backdrop-blur-3xl text-slate-900 border-2 border-slate-300/90 rounded-[36px] sm:rounded-[48px] shadow-2xl shadow-black/50 flex flex-col overflow-visible transition-all duration-300 transform scale-100 animate-scaleUp">
+      <div className={`relative z-[90] w-full max-w-2xl max-h-[88vh] bg-white/95 backdrop-blur-3xl text-slate-900 border-2 border-slate-300/90 rounded-[36px] sm:rounded-[48px] shadow-2xl shadow-black/50 flex flex-col transition-all duration-300 transform scale-100 animate-scaleUp ${
+        openDropdown ? 'overflow-visible' : 'overflow-visible sm:overflow-hidden'
+      }`}>
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 sm:px-8 py-4 sm:py-5 border-b border-slate-200/80 bg-stone-100/90 rounded-t-[36px] sm:rounded-t-[48px]">
@@ -108,7 +118,9 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
         </div>
 
         {/* Body Form */}
-        <div className="p-5 sm:p-8 space-y-5 sm:space-y-6 overflow-y-auto overflow-x-visible flex-1 bg-stone-50/60">
+        <div className={`relative p-5 sm:p-8 space-y-5 sm:space-y-6 flex-1 bg-stone-50/60 transition-all overscroll-contain ${
+          openDropdown ? 'overflow-visible z-[9990]' : 'overflow-y-auto overflow-x-visible z-10'
+        }`}>
           
           {/* Location status notification alert if fetched */}
           {locationStatus && (
@@ -118,89 +130,104 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 pb-2">
+          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 pb-2 relative ${openDropdown ? 'z-[9995]' : 'z-50'}`}>
             {/* Searchable State Selector */}
-            <SearchableDropdown
-              label="1. State / UT"
-              value={selectedState}
-              options={ALL_INDIA_STATES.map(s => s.name)}
-              placeholder="Search state (e.g. Odisha)..."
-              badgeText={(opt) => (opt === 'Odisha' ? '★ Dataset Available' : null)}
-              onChange={(newState) => {
-                setSelectedState(newState);
-                const stateObj = ALL_INDIA_STATES.find(s => s.name === newState);
-                const firstDist = stateObj?.districts[0]?.name || 'District HQ';
-                setSelectedDistrict(firstDist);
-                const firstPC = stateObj?.districts[0]?.constituencies[0] || `${firstDist} PC`;
-                setSelectedConstituency(firstPC);
-              }}
-            />
+            <div className={`transition-all duration-300 relative ${openDropdown === 'state' ? 'z-[9999]' : openDropdown ? 'opacity-40 blur-[1px] z-10' : 'z-20'}`}>
+              <SearchableDropdown
+                label="1. State / UT"
+                value={selectedState}
+                options={ALL_INDIA_STATES.map(s => s.name)}
+                placeholder="Search state (e.g. Odisha)..."
+                badgeText={(opt) => (opt === 'Odisha' ? '★ Dataset Available' : null)}
+                onOpenChange={(open) => setOpenDropdown(open ? 'state' : null)}
+                onChange={(newState) => {
+                  setSelectedState(newState);
+                  const stateObj = ALL_INDIA_STATES.find(s => s.name === newState);
+                  const firstDist = stateObj?.districts[0]?.name || 'District HQ';
+                  setSelectedDistrict(firstDist);
+                  const firstPC = stateObj?.districts[0]?.constituencies[0] || `${firstDist} PC`;
+                  setSelectedConstituency(firstPC);
+                }}
+              />
+            </div>
 
             {/* Searchable District Selector */}
-            <SearchableDropdown
-              label="2. District"
-              value={selectedDistrict}
-              options={currentDistrictsList.map(d => d.name)}
-              placeholder="Search district..."
-              onChange={(newDist) => {
-                setSelectedDistrict(newDist);
-                const distObj = currentDistrictsList.find(d => d.name === newDist);
-                const firstPC = distObj?.constituencies[0] || `${newDist} PC`;
-                setSelectedConstituency(firstPC);
-              }}
-            />
+            <div className={`transition-all duration-300 relative ${openDropdown === 'district' ? 'z-[9999]' : openDropdown ? 'opacity-40 blur-[1px] z-10' : 'z-20'}`}>
+              <SearchableDropdown
+                label="2. District"
+                value={selectedDistrict}
+                options={currentDistrictsList.map(d => d.name)}
+                placeholder="Search district..."
+                onOpenChange={(open) => setOpenDropdown(open ? 'district' : null)}
+                onChange={(newDist) => {
+                  setSelectedDistrict(newDist);
+                  const distObj = currentDistrictsList.find(d => d.name === newDist);
+                  const firstPC = distObj?.constituencies[0] || `${newDist} PC`;
+                  setSelectedConstituency(firstPC);
+                }}
+              />
+            </div>
 
             {/* Searchable Constituency Selector */}
-            <SearchableDropdown
-              label="3. Constituency (PC)"
-              value={selectedConstituency}
-              options={currentPCList}
-              placeholder="Search constituency..."
-              badgeText={(opt) => (opt.includes('Koraput PC') ? 'Dataset Available' : null)}
-              onChange={(newPC) => setSelectedConstituency(newPC)}
-            />
+            <div className={`transition-all duration-300 relative ${openDropdown === 'constituency' ? 'z-[9999]' : openDropdown ? 'opacity-40 blur-[1px] z-10' : 'z-20'}`}>
+              <SearchableDropdown
+                label="3. Constituency (PC)"
+                value={selectedConstituency}
+                options={currentPCList}
+                placeholder="Search constituency..."
+                badgeText={(opt) => (opt.includes('Koraput PC') ? 'Dataset Available' : null)}
+                onOpenChange={(open) => setOpenDropdown(open ? 'constituency' : null)}
+                onChange={(newPC) => setSelectedConstituency(newPC)}
+              />
+            </div>
           </div>
 
-          {/* Region Status Banner */}
-          {isDemoRegionSelected ? (
-            <div className="p-4 sm:p-5 rounded-3xl bg-emerald-50 border border-emerald-300 flex items-start gap-3.5 shadow-sm">
-              <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-              <div className="space-y-1 text-slate-800">
-                <h4 className="font-extrabold text-xs sm:text-sm text-emerald-900">
-                  Dataset Available &amp; Active
-                </h4>
-                <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
-                  Full dataset loaded for <strong>Odisha → Koraput PC</strong> (`Semiliguda`, `Damanjodi`). Includes <strong>verified community intakes, active hotspots, and real-time multi-factor scoring</strong>.
-                </p>
+          {/* Region Status Banner — Apple Maps style dimming & blurring when dropdown opens */}
+          <div className={`transition-all duration-300 transform ${
+            openDropdown ? 'opacity-25 blur-[3px] scale-[0.98] pointer-events-none' : 'opacity-100 blur-0 scale-100'
+          }`}>
+            {isDemoRegionSelected ? (
+              <div className="p-4 sm:p-5 rounded-3xl bg-emerald-50 border border-emerald-300 flex items-start gap-3.5 shadow-sm">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-slate-800">
+                  <h4 className="font-extrabold text-xs sm:text-sm text-emerald-900">
+                    Dataset Available &amp; Active
+                  </h4>
+                  <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
+                    Full dataset loaded for <strong>Odisha → Koraput PC</strong> (`Semiliguda`, `Damanjodi`). Includes <strong>verified community intakes, active hotspots, and real-time multi-factor scoring</strong>.
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="p-4 sm:p-5 rounded-3xl bg-amber-50 border border-amber-300 flex items-start gap-3.5 shadow-sm">
-              <AlertCircle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-2 text-slate-800">
-                <h4 className="font-extrabold text-xs sm:text-sm text-amber-900">
-                  No Dataset Loaded for {selectedConstituency}
-                </h4>
-                <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
-                  To prevent browser memory overloads across 543 PCs, real-time intelligence is seeded exclusively for <strong>Odisha → Koraput PC</strong>.
-                </p>
-                <button
-                  onClick={() => {
-                    setSelectedState('Odisha');
-                    setSelectedDistrict('Koraput District');
-                    setSelectedConstituency('Koraput PC (Demo Region)');
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold transition-colors shadow-sm"
-                >
-                  Switch to Koraput (Dataset Available) <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+            ) : (
+              <div className="p-4 sm:p-5 rounded-3xl bg-amber-50 border border-amber-300 flex items-start gap-3.5 shadow-sm">
+                <AlertCircle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-2 text-slate-800">
+                  <h4 className="font-extrabold text-xs sm:text-sm text-amber-900">
+                    No Dataset Loaded for {selectedConstituency}
+                  </h4>
+                  <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
+                    To prevent browser memory overloads across 543 PCs, real-time intelligence is seeded exclusively for <strong>Odisha → Koraput PC</strong>.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedState('Odisha');
+                      setSelectedDistrict('Koraput District');
+                      setSelectedConstituency('Koraput PC (Demo Region)');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold transition-colors shadow-sm"
+                  >
+                    Switch to Koraput (Dataset Available) <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Footer with Fetch Location Option where Active is written */}
-        <div className="px-6 sm:px-8 py-4 bg-stone-100 border-t border-slate-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-[36px] sm:rounded-b-[48px]">
+        <div className={`relative px-6 sm:px-8 py-4 bg-stone-100 border-t border-slate-200/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-[36px] sm:rounded-b-[48px] transition-all duration-300 ${
+          openDropdown ? 'opacity-30 blur-[2px] pointer-events-none z-0' : 'opacity-100 blur-0 z-10'
+        }`}>
           <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
             <div className="text-[11px] sm:text-xs font-extrabold text-slate-700 flex items-center gap-1.5 truncate">
               <MapPin className="w-4 h-4 text-teal-600 shrink-0" />
