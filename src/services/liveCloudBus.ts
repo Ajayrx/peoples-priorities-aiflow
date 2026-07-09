@@ -23,6 +23,7 @@ export interface LiveCitizenReport {
   detectedIssue: string;
   urgencyReasoning: string;
   photoBase64?: string;
+  intakeType?: 'VOICE' | 'PHOTO' | 'TEXT';
   timestamp: string;
   location: {
     lat: number;
@@ -220,6 +221,7 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
             detectedIssue: data.detectedIssue || 'Verified Infrastructure Defect',
             urgencyReasoning: data.urgencyReasoning || 'Immediate resolution required.',
             photoBase64: data.photoBase64,
+            intakeType: data.intakeType || (data.photoBase64 ? 'PHOTO' : 'TEXT'),
             timestamp: data.timestamp || 'Just now',
             location: data.location || { lat: 18.7083, lng: 82.8465, blockOrTown: 'Semiliguda' },
             isRealCloudItem: true,

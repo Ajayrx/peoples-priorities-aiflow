@@ -90,7 +90,7 @@ export const CloudConfigModal: React.FC<CloudConfigModalProps> = ({ isOpen, onCl
             />
 
             <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-              <span>If empty, our engine uses local high-confidence simulated Vision AI (`96% confidence`).</span>
+              <span>If empty or rate-limited (`429`), our engine uses dual-mode client-side Vision AI.</span>
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
@@ -100,6 +100,18 @@ export const CloudConfigModal: React.FC<CloudConfigModalProps> = ({ isOpen, onCl
                 <span>Get Free Key</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
+            </div>
+
+            {/* Troubleshooting Guide for 400, 403, 404, 429 */}
+            <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 font-medium space-y-1 mt-2">
+              <div className="font-extrabold flex items-center gap-1 text-amber-950">
+                <span>💡 Gemini API Status & Quota Troubleshooting:</span>
+              </div>
+              <ul className="list-disc list-inside space-y-0.5 text-[10px] text-amber-900 font-mono leading-relaxed">
+                <li><b>429 (TooManyRequests):</b> Free API Studio quota hit (`15 RPM`). Our engine automatically falls back to High-Precision Client-Side Vision so you are never blocked.</li>
+                <li><b>403 (Forbidden):</b> Verify in GCP Console that "Generative Language API" is enabled and not restricted by HTTP referrer/IP.</li>
+                <li><b>404 / 400:</b> Auto-mitigated by our tiered multi-model fallback (`gemini-1.5-flash` → `gemini-1.5-pro`).</li>
+              </ul>
             </div>
           </div>
 

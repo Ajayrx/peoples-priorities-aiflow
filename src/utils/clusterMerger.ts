@@ -31,7 +31,7 @@ export function mergeLiveReportsIntoClusters(baseHotspots: Hotspot[], liveReport
         villageOrWard: 'Verified Citizen Pin',
       },
       category: rep.category,
-      inputMethod: rep.photoBase64 ? 'PHOTO' : 'TEXT',
+      inputMethod: rep.intakeType || (rep.photoBase64 ? 'PHOTO' : 'TEXT'),
       rawMediaUrl: rep.photoBase64,
       rawText: rep.detectedIssue,
       aiProcessing: {

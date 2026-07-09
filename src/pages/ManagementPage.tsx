@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { Region } from '../types';
 import { MOCK_DATASET_HEALTH } from '../data/mockData';
-import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
+import { useCitizenStore } from '../context/CitizenStoreContext';
 
 interface ManagementPageProps {
   region: Region;
@@ -24,16 +24,9 @@ interface ManagementPageProps {
 export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNavigate }) => {
   const isDemoRegion = region.constituency.includes('Koraput');
 
-  const [liveReports, setLiveReports] = React.useState<LiveCitizenReport[]>([]);
+  const { reports } = useCitizenStore();
 
-  React.useEffect(() => {
-    const unsubscribe = subscribeToLiveReports((reports) => {
-      setLiveReports(reports);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const totalGeoRecords = liveReports.length + MOCK_DATASET_HEALTH.reduce((sum, d) => sum + d.recordsCount, 0);
+  const totalGeoRecords = reports.length + MOCK_DATASET_HEALTH.reduce((sum, d) => sum + d.recordsCount, 0);
 
   // Recalibration pipeline execution simulation
   const [isRecalibrating, setIsRecalibrating] = useState<boolean>(false);

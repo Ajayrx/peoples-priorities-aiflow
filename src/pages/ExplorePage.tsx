@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -26,8 +26,7 @@ import {
 } from 'lucide-react';
 import type { Hotspot, Region } from '../types';
 import { MOCK_HOTSPOTS } from '../data/mockData';
-import { subscribeToLiveReports, type LiveCitizenReport } from '../services/liveCloudBus';
-import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
+import { useCitizenStore } from '../context/CitizenStoreContext';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
 function MapViewController({ center, zoom }: { center: [number, number]; zoom: number }) {
@@ -79,21 +78,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
   const [simulatedPriorityDrop, setSimulatedPriorityDrop] = useState<number>(82); // score reduction
 
-  // Real-time citizen reports state
-  const [liveReports, setLiveReports] = useState<LiveCitizenReport[]>([]);
+  // Consume canonical single source of truth
+  const { hotspots } = useCitizenStore();
 
-  useEffect(() => {
-    const unsubscribe = subscribeToLiveReports((reports) => {
-      setLiveReports(reports);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Filter and sort hotspots (2 Demo items + Live Citizen Reports)
+  // Filter and sort hotspots (from canonical store)
   const filteredHotspots = useMemo(() => {
-    const baseList: Hotspot[] = isDemoRegion ? [...MOCK_HOTSPOTS] : [];
-    const combined = mergeLiveReportsIntoClusters(baseList, liveReports);
-    return combined.filter((hs) => {
+    const baseList = hotspots.length > 0 ? hotspots : (isDemoRegion ? [...MOCK_HOTSPOTS] : []);
+    return baseList.filter((hs) => {
       const matchesCategory = selectedCategory === 'ALL' || hs.category === selectedCategory;
       const matchesSearch =
         hs.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -101,7 +92,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         hs.category.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     }).sort((a, b) => b.priorityScore - a.priorityScore);
-  }, [isDemoRegion, selectedCategory, searchQuery, liveReports]);
+  }, [isDemoRegion, selectedCategory, searchQuery, hotspots]);
 
 
   // Categories list for quick filtering pills
@@ -472,18 +463,40 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                             </div>
                           </Tooltip>
 
-                          <Popup>
-                            <div className="p-2 max-w-xs font-sans text-slate-900">
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-100 text-teal-800 mb-1">
-                                {hs.category} CLUSTER
-                              </span>
-                              <h4 className="font-extrabold text-sm mb-1">{hs.name}</h4>
-                              <p className="text-xs text-slate-600 mb-3 font-medium">{hs.aiSynthesis.headline}</p>
+                          <Popup className="custom-popup">
+                            <div className="p-2.5 max-w-[280px] font-sans text-slate-900 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-100 text-teal-800">
+                                  {hs.category} CLUSTER
+                                </span>
+                                <span className="text-[10px] font-mono font-black text-slate-500">
+                                  Score: {hs.priorityScore}/100
+                                </span>
+                              </div>
+
+                              <h4 className="font-extrabold text-sm leading-tight text-slate-900">{hs.name}</h4>
+                              <p className="text-xs text-slate-600 font-medium leading-relaxed border-l-2 border-teal-500 pl-2">
+                                {hs.aiSynthesis?.headline || hs.aiSynthesis?.reasoning}
+                              </p>
+
+                              {/* Latest Citizen Intake Preview */}
+                              {hs.recentReports && hs.recentReports.length > 0 && (
+                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-800">
+                                  <div className="flex items-center gap-1 font-mono text-[9px] font-extrabold text-teal-700 uppercase mb-0.5">
+                                    <span>Latest Citizen Demand:</span>
+                                    <span>{hs.recentReports[0].inputMethod || (hs.recentReports[0].rawMediaUrl ? 'PHOTO' : 'TEXT')}</span>
+                                  </div>
+                                  <p className="italic truncate text-slate-700">
+                                    "{hs.recentReports[0].rawText || hs.recentReports[0].aiProcessing?.transcription || hs.recentReports[0].aiProcessing?.aiSummary}"
+                                  </p>
+                                </div>
+                              )}
+
                               <button
                                 onClick={() => {
                                   handleSelectHotspot(hs);
                                 }}
-                                className="w-full py-1.5 px-3 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs"
+                                className="w-full py-1.5 px-3 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-all"
                               >
                                 <span>Open 7-Tab Inspection Drawer</span>
                                 <ChevronRight className="w-3.5 h-3.5" />
@@ -856,47 +869,59 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
                   {activeHotspot.recentReports.length > 0 ? (
                     <div className="space-y-4">
-                      {activeHotspot.recentReports.map((rep) => (
-                        <div key={rep.id} className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
-                          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-900 text-white">
-                                {rep.inputMethod} REPORT
+                      {activeHotspot.recentReports.map((rep) => {
+                        const isVoice = rep.inputMethod === 'VOICE' || (rep as any).intakeType === 'VOICE';
+                        const isPhoto = rep.rawMediaUrl || rep.inputMethod === 'PHOTO' || (rep as any).intakeType === 'PHOTO';
+
+                        return (
+                          <div key={rep.id} className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase ${isVoice ? 'bg-teal-600 text-white' : isPhoto ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white'}`}>
+                                  {isVoice ? '🎙️ VOICE COMPLAINT' : isPhoto ? '📸 PHOTO EVIDENCE' : '📝 TEXT REPORT'}
+                                </span>
+                                <span className="text-xs font-mono text-slate-500 font-medium">{rep.timestamp}</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {rep.verificationStatus || 'VERIFIED'}
                               </span>
-                              <span className="text-xs font-mono text-slate-500 font-medium">{rep.timestamp}</span>
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              {rep.verificationStatus}
-                            </span>
+
+                            {/* If Photo Report, display the actual image thumbnail and analysis */}
+                            {isPhoto && rep.rawMediaUrl && (
+                              <div className="flex flex-col sm:flex-row items-start gap-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200">
+                                <img src={rep.rawMediaUrl} alt="Verified Citizen Photo" className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg border-2 border-emerald-400 shadow-md shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[10px] font-mono font-bold text-emerald-800 uppercase">Automated AI Defect Inspection</div>
+                                  <p className="text-xs text-slate-800 font-medium mt-1 leading-relaxed">
+                                    {rep.rawText || rep.aiProcessing?.imageDefectDetected || rep.aiProcessing?.aiSummary}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Voice or Text Transcription Note */}
+                            {(!isPhoto || !rep.rawMediaUrl) && (
+                              <div>
+                                <div className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                                  {isVoice ? 'Spoken Voice Transcribed Text (Odia / Hindi / English)' : 'Written Citizen Intake Note'}
+                                </div>
+                                <p className="text-xs sm:text-sm italic text-slate-900 font-serif bg-slate-50 p-3 rounded-xl border border-slate-200/80 mt-1 leading-relaxed">
+                                  "{rep.rawText || rep.aiProcessing?.transcription || rep.aiProcessing?.aiSummary}"
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              {(rep.aiProcessing?.extractedKeywords || ['Citizen Report', rep.category]).map((kw, i) => (
+                                <span key={i} className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 text-[10px] font-mono font-bold border border-teal-200/60">
+                                  #{kw}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-
-                          {rep.rawText && (
-                            <div>
-                              <div className="text-[10px] font-mono font-bold text-slate-400 uppercase">Original Voice / Odia Transcription</div>
-                              <p className="text-xs italic text-slate-800 font-serif bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 mt-1">
-                                "{rep.rawText}"
-                              </p>
-                            </div>
-                          )}
-
-                          {rep.aiProcessing.imageDefectDetected && (
-                            <div>
-                              <div className="text-[10px] font-mono font-bold text-teal-700 uppercase">AI Photo Defect Inspection</div>
-                              <p className="text-xs text-slate-700 font-medium mt-0.5">
-                                {rep.aiProcessing.imageDefectDetected}
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            {rep.aiProcessing.extractedKeywords.map((kw, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 text-[10px] font-mono font-bold border border-teal-200/60">
-                                #{kw}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="bg-white rounded-2xl p-8 border border-slate-200/80 text-center space-y-3">

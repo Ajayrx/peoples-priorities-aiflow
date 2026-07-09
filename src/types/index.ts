@@ -22,21 +22,48 @@ export type PriorityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'MONITORED';
 
 export interface CitizenReport {
   id: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  category: CategoryType;
+  priority?: PriorityLevel;
+  status?: string;
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+  images?: string[];
+  voiceUrl?: string;
+  createdAt?: string | number;
+  updatedAt?: string | number;
+  userId?: string;
+  verificationStatus?: 'VERIFIED' | 'FLAGGED_LOW_CONFIDENCE' | 'PENDING_FIELD_CHECK' | string;
+  aiSummary?: string;
+  aiCategory?: string;
+  aiPriority?: string;
+  aiConfidence?: number;
+  hotspotId?: string;
+
+  // Backwards-compatible canonical mappings for UI components
   timestamp: string;
   location: {
     lat: number;
     lng: number;
-    state: string;
-    district: string;
-    constituency: string;
+    state?: string;
+    district?: string;
+    constituency?: string;
     blockOrTown: string;
-    villageOrWard: string;
+    villageOrWard?: string;
   };
-  category: CategoryType;
-  inputMethod: 'VOICE' | 'PHOTO' | 'TEXT';
+  inputMethod?: 'VOICE' | 'PHOTO' | 'TEXT';
+  intakeType?: 'VOICE' | 'PHOTO' | 'TEXT';
   rawMediaUrl?: string;
+  photoBase64?: string;
   rawText?: string;
-  aiProcessing: {
+  detectedIssue?: string;
+  urgencyReasoning?: string;
+  priorityLevel?: PriorityLevel;
+  priorityScore?: number;
+  aiProcessing?: {
     transcription?: string;
     imageDefectDetected?: string;
     extractedKeywords: string[];
@@ -45,8 +72,7 @@ export interface CitizenReport {
     aiSummary: string;
   };
   assignedHotspotId?: string;
-  verificationStatus: 'VERIFIED' | 'FLAGGED_LOW_CONFIDENCE' | 'PENDING_FIELD_CHECK';
-  duplicateStatus: 'UNIQUE' | 'DUPLICATE_CLUSTERED';
+  duplicateStatus?: 'UNIQUE' | 'DUPLICATE_CLUSTERED';
 }
 
 export interface PriorityBreakdown {
@@ -133,4 +159,12 @@ export interface WhatIfScenario {
     newPriorityScore: number;
     secondaryBenefits: string[];
   };
+}
+
+export interface DashboardStats {
+  totalReports: number;
+  criticalReports: number;
+  verifiedReports: number;
+  categoryCounts: Record<string, number>;
+  avgAiConfidence: number;
 }

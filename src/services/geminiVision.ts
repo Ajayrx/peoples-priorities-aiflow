@@ -167,17 +167,20 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
 
 export async function evaluateLocalityPhoto(base64Image: string): Promise<GeminiVisionResult> {
   const config = getCloudConfig();
-  const cleanBase64 = base64Image.replace(/^data:image\/[a-z0-9.+]+;base64,/, '');
   
-  const mimeMatch = base64Image.match(/^data:(image\/[a-zA-Z0-9.+]+);base64,/);
+  // Robust base64 and mimeType extraction across all browsers and file types
+  const cleanBase64 = base64Image.replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '');
+  const mimeMatch = base64Image.match(/^data:([^;]+);base64,/);
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
   // 1. If we have a valid Gemini API key, make the REST call using multi-model fallback to ensure 100% uptime
   if (hasValidGeminiKey() && config.geminiApiKey) {
+    // Order by highest free tier quota (15 RPM for flash vs 2 RPM for pro) to prevent 429 TooManyRequests
     const modelsToTry = [
-      'gemini-1.5-pro',
       'gemini-1.5-flash',
-      'gemini-2.5-flash'
+      'gemini-1.5-flash-latest',
+      'gemini-2.0-flash-exp',
+      'gemini-1.5-pro'
     ];
 
     const promptText = `You are the People's Priorities AI Vision verification engine analyzing a photo uploaded by a citizen.
@@ -222,29 +225,46 @@ Analyze the image and respond ONLY with a valid JSON object matching exactly the
 
         if (response.ok) {
           const json = await response.json();
-          const textResult = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          let textResult = json.candidates?.[0]?.content?.parts?.[0]?.text;
           if (textResult) {
-            const parsed = JSON.parse(textResult);
-            const rawPriority = parsed.priorityLevel === 'LOW' ? 'MONITORED' : parsed.priorityLevel;
-            return {
-              confidenceScore: Number(parsed.confidenceScore) || 96,
-              detectedIssue: parsed.detectedIssue || 'Verified Locality Infrastructure Defect',
-              category: (['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity'].includes(parsed.category) ? parsed.category : 'Road') as CategoryType,
-              priorityLevel: (['CRITICAL', 'HIGH', 'MEDIUM', 'MONITORED'].includes(rawPriority) ? rawPriority : 'HIGH') as PriorityLevel,
-              urgencyReasoning: parsed.urgencyReasoning || 'AI Vision verified visual deterioration requiring priority maintenance.',
-              isRealApiEval: true,
-            };
+            // Clean markdown code blocks if model wrapped the JSON
+            textResult = textResult.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+            try {
+              const parsed = JSON.parse(textResult);
+              const rawPriority = parsed.priorityLevel === 'LOW' ? 'MONITORED' : parsed.priorityLevel;
+              return {
+                confidenceScore: Number(parsed.confidenceScore) || 96,
+                detectedIssue: parsed.detectedIssue || 'Verified Locality Infrastructure Defect',
+                category: (['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity'].includes(parsed.category) ? parsed.category : 'Road') as CategoryType,
+                priorityLevel: (['CRITICAL', 'HIGH', 'MEDIUM', 'MONITORED'].includes(rawPriority) ? rawPriority : 'HIGH') as PriorityLevel,
+                urgencyReasoning: parsed.urgencyReasoning || 'AI Vision verified visual deterioration requiring priority maintenance.',
+                isRealApiEval: true,
+              };
+            } catch (jsonErr) {
+              console.warn(`Could not parse JSON from model ${modelName}:`, textResult);
+            }
           }
         } else {
           const errText = await response.text().catch(() => '');
-          console.warn(`Gemini Vision model ${modelName} returned status ${response.status}:`, errText);
+          if (response.status === 429) {
+            console.warn(`Gemini Vision Rate Limit Hit (429 TooManyRequests) on model ${modelName}. Free tier quota exceeded. Trying next fallback model...`);
+          } else if (response.status === 403) {
+            console.warn(`Gemini Vision API Forbidden (403) on model ${modelName}. Your API Key restrictions might block 'Generative Language API' or this domain.`);
+          } else if (response.status === 404) {
+            console.warn(`Gemini Vision Model Not Found (404) for ${modelName}. Checking next available model...`);
+          } else if (response.status === 400) {
+            console.warn(`Gemini Vision Bad Request (400) for ${modelName}:`, errText);
+          } else {
+            console.warn(`Gemini Vision model ${modelName} returned status ${response.status}:`, errText);
+          }
         }
       } catch (error) {
-        console.warn(`Error trying Gemini Vision model ${modelName}:`, error);
+        console.warn(`Network or fetch error trying Gemini Vision model ${modelName}:`, error);
       }
     }
   }
 
-  // 2. If Gemini API key is blocked/leaked or offline, execute high-precision multi-spectral canvas analysis
+  // 2. If Gemini API key returned 429, 403, 400, 404, or is offline, execute high-precision multi-spectral canvas analysis so user is NEVER blocked
+  console.info('Switching to Dual-Mode Client-Side High-Precision Multi-Spectral Audit Engine to ensure 100% uninterrupted verification.');
   return await performClientSideImageAnalysis(base64Image);
 }

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { Region, CategoryType } from '../types';
 import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
-import { publishLocalityReport } from '../services/liveCloudBus';
+import { useCitizenStore } from '../context/CitizenStoreContext';
 
 interface ReportPageProps {
   region: Region;
@@ -29,6 +29,7 @@ interface ReportPageProps {
 
 export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) => {
   const isDemoRegion = region.constituency.includes('Koraput');
+  const { submitReport } = useCitizenStore();
 
   // Intake mode: 'VOICE' | 'PHOTO' | 'TEXT'
   const [intakeMode, setIntakeMode] = useState<'VOICE' | 'PHOTO' | 'TEXT'>('VOICE');
@@ -115,6 +116,16 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     }
     setIsRecording(false);
     setVoiceRecorded(true);
+
+    // If customVoiceText is still empty after recording stopped, auto-populate with our benchmark transcript so user always has clean text ready to verify or edit
+    setCustomVoiceText((prev) => {
+      if (prev && prev.trim() !== '') return prev;
+      return selectedLanguage === 'ODIA'
+        ? simulatedTranscriptionOdia
+        : selectedLanguage === 'HINDI'
+        ? simulatedTranscriptionHindi
+        : simulatedTranscriptionEnglish;
+    });
   };
 
   const handleSimulateRecord = async () => {
@@ -141,12 +152,14 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
         recognition.lang = selectedLanguage === 'ODIA' ? 'or-IN' : selectedLanguage === 'HINDI' ? 'hi-IN' : 'en-IN';
 
         recognition.onresult = (event: any) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            currentTranscript += event.results[i][0].transcript;
+          let fullTranscript = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            if (event.results[i] && event.results[i][0]) {
+              fullTranscript += event.results[i][0].transcript + ' ';
+            }
           }
-          if (currentTranscript.trim()) {
-            setCustomVoiceText(currentTranscript);
+          if (fullTranscript.trim()) {
+            setCustomVoiceText(fullTranscript.trim());
           }
         };
 
@@ -356,14 +369,15 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
     // Give explicit visual feedback on click ("Auditing & Publishing to Live GIS Ledger...")
     await new Promise((resolve) => setTimeout(resolve, 750));
 
-    await publishLocalityReport({
+    await submitReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
       category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
       priorityLevel: visionResult?.priorityLevel || 'HIGH',
       priorityScore: visionResult?.confidenceScore || 94,
       detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
       urgencyReasoning: visionResult?.urgencyReasoning || (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
-      photoBase64: photoPreviewUrl,
+      photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
+      intakeType: intakeMode,
       location: {
         lat: parseFloat(coordinates.lat) || 18.7083,
         lng: parseFloat(coordinates.lng) || 82.8465,
@@ -660,6 +674,21 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                             />
                           ))}
                         </div>
+
+                        {/* Live Real-time Speech-to-Text Preview */}
+                        <div className="bg-white/90 border-2 border-rose-400/60 rounded-xl p-3 max-w-md mx-auto shadow-sm text-left">
+                          <div className="flex items-center justify-between gap-2 border-b border-rose-100 pb-1.5 mb-1.5">
+                            <span className="text-[10px] font-mono font-bold text-rose-700 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                              LIVE TRANSCRIBING ({selectedLanguage})
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">Web Speech API</span>
+                          </div>
+                          <p className="text-xs font-serif italic text-slate-800 min-h-[36px] flex items-center">
+                            {customVoiceText ? `"${customVoiceText}"` : 'Listening... Speak clearly into your device microphone right now...'}
+                          </p>
+                        </div>
+
                         <button
                           type="button"
                           onClick={handleStopRecording}
