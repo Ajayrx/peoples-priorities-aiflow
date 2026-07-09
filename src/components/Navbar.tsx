@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Home, MapPin, LayoutDashboard, Send, Database, Globe, ChevronDown, Cloud } from 'lucide-react';
+import { Home, MapPin, LayoutDashboard, Send, Database, Globe, ChevronDown } from 'lucide-react';
 import { ConstituencySelectorModal } from './ConstituencySelectorModal';
-import { CloudConfigModal } from './CloudConfigModal';
 
 interface NavbarProps {
   currentTab: string;
@@ -19,7 +18,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectRegion,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isCloudModalOpen, setIsCloudModalOpen] = useState<boolean>(false);
 
   const navItems = [
     { id: 'landing', label: 'Home', icon: Home },
@@ -62,16 +60,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {region.constituency.replace(' (Demo Region)', '')}
                 <ChevronDown className="w-3.5 h-3.5 text-teal-600 shrink-0" />
               </span>
-            </button>
-
-            {/* Cloud & Gemini Setup Trigger Button */}
-            <button
-              onClick={() => setIsCloudModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-teal-50 to-emerald-50 hover:from-teal-100 hover:to-emerald-100 border border-teal-300/80 text-xs text-teal-900 font-extrabold transition-all active:scale-95 shadow-sm shrink-0"
-              title="Configure Gemini API & Firebase Cloud Setup"
-            >
-              <Cloud className="w-3.5 h-3.5 text-teal-600 animate-pulse shrink-0" />
-              <span>AI Cloud</span>
             </button>
           </div>
 
@@ -171,12 +159,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         onClose={() => setIsModalOpen(false)}
         currentRegion={region}
         onSelectRegion={onSelectRegion}
-      />
-
-      {/* Cloud & Gemini Configuration Modal */}
-      <CloudConfigModal
-        isOpen={isCloudModalOpen}
-        onClose={() => setIsCloudModalOpen(false)}
       />
     </>
   );

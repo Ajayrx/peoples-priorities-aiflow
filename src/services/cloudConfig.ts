@@ -18,8 +18,8 @@ export interface CloudConfigState {
 const CONFIG_STORAGE_KEY = 'peoples_priorities_cloud_config_v1';
 
 export function getCloudConfig(): CloudConfigState {
-  // 1. Check Vercel / Vite environment variables first, otherwise use real production defaults
-  const defaultGeminiKey = 'AIzaSyAEHUvHsWPtJvFb5k2INGDeYDNVCqnTNSY';
+  // 1. Check Vercel / Vite environment variables first, otherwise use local storage or offline AI engine
+  const defaultGeminiKey = '';
   const defaultFirebase = {
     apiKey: 'AIzaSyC2Qufkje5ySeQut5ht7RKBDZTbfZvNrw0',
     authDomain: 'peoples-priorities-cloud.firebaseapp.com',
