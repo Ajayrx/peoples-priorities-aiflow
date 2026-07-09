@@ -73,6 +73,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [showAIClusters, setShowAIClusters] = useState<boolean>(true);
   const [showInfrastructure, setShowInfrastructure] = useState<boolean>(true);
   const [showDemographicHeat, setShowDemographicHeat] = useState<boolean>(false);
+  const [mapStyle, setMapStyle] = useState<'streets' | 'satellite' | 'hybrid'>('streets');
 
   // Simulation state for Tab 6 ("What-If" Priority Mandate Simulator)
   const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
@@ -181,13 +182,6 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               <Activity className="w-4 h-4" />
               <span>Submit Citizen Report</span>
             </button>
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm transition-all shadow-sm active:scale-95"
-            >
-              <Sliders className="w-4 h-4 text-amber-400" />
-              <span>MP Decision Simulator</span>
-            </button>
           </div>
         </div>
       </div>
@@ -229,39 +223,60 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
           </div>
         </div>
 
-        {/* Category Pills Strip */}
-        <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200/80 overflow-x-auto">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-teal-600" /> Filter:
+        {/* Category Filter Controls — Mobile & Tablet Dropdown + Responsive Side-Scrolling Pills Strip */}
+        <div className="mb-6 pb-4 border-b border-slate-200/80 space-y-3">
+          {/* 1. Mobile & Tablet Thumb-Friendly Dropdown (Visible on mobile/tablet, alongside pills) */}
+          <div className="flex md:hidden items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200 shadow-xs">
+            <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+              <Filter className="w-3.5 h-3.5 text-teal-600" /> Filter Dropdown:
             </span>
-            {categories.map((cat) => {
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 border ${
-                    isSelected
-                      ? 'bg-teal-600 text-white border-teal-700 shadow-md shadow-teal-600/20 scale-105'
-                      : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 hover:border-teal-300'
-                  }`}
-                >
-                  <span>{cat.label}</span>
-                  {cat.count !== undefined && (
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${isSelected ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      {cat.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+            >
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.label} {cat.count !== undefined ? `(${cat.count})` : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span>{isDemoRegion ? `${filteredHotspots.length} Active AI Clusters` : 'No Dataset Loaded'}</span>
+          {/* 2. Side-Scrolling Filter Pills Strip + Active Clusters Badge */}
+          <div className="flex items-center justify-between gap-4 overflow-x-auto no-scrollbar pb-1">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-teal-600" /> Filter:
+              </span>
+              {categories.map((cat) => {
+                const isSelected = selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 border ${
+                      isSelected
+                        ? 'bg-teal-600 text-white border-teal-700 shadow-md shadow-teal-600/20 scale-105'
+                        : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50 hover:border-teal-300'
+                    }`}
+                  >
+                    <span>{cat.label}</span>
+                    {cat.count !== undefined && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${isSelected ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {cat.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span>{isDemoRegion ? `${filteredHotspots.length} Active AI Clusters` : 'No Dataset Loaded'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -341,6 +356,36 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                   <span className={`w-2 h-2 rounded-full ${showDemographicHeat ? 'bg-purple-500' : 'bg-slate-300'}`} />
                   <span>Demographics</span>
                 </button>
+
+                <div className="h-4 w-px bg-slate-300 hidden sm:block mx-1" />
+
+                {/* Map Base Tile Switcher (Streets / Satellite / Hybrid) */}
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-2xs">
+                  <button
+                    onClick={() => setMapStyle('streets')}
+                    className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      mapStyle === 'streets' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🗺️ Streets
+                  </button>
+                  <button
+                    onClick={() => setMapStyle('satellite')}
+                    className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      mapStyle === 'satellite' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🛰️ Satellite
+                  </button>
+                  <button
+                    onClick={() => setMapStyle('hybrid')}
+                    className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      mapStyle === 'hybrid' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🌐 Hybrid
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -356,11 +401,25 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                 >
                   <MapViewController center={mapCenter} zoom={activeHotspot ? 13 : 11} />
 
-                  {/* Clean CartoDB Positron / Light or Dark map tiles */}
-                  <TileLayer
-                    attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> • Government Geo Data'
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                  />
+                  {/* Dynamic Base Map Tiles (Streets vs Satellite vs Hybrid) */}
+                  {mapStyle === 'streets' && (
+                    <TileLayer
+                      attribution='&copy; <a href="https://carto.com/attributions">CARTO</a> • Government Geo Data'
+                      url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                    />
+                  )}
+                  {(mapStyle === 'satellite' || mapStyle === 'hybrid') && (
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.esri.com/">Esri</a> • Earthstar Geographics'
+                      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    />
+                  )}
+                  {mapStyle === 'hybrid' && (
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.esri.com/">Esri Labels</a>'
+                      url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                    />
+                  )}
 
                   {/* 1. Demographic Heatmap Simulation Overlay (when enabled) */}
                   {showDemographicHeat && (

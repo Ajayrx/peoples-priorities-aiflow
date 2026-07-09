@@ -89,7 +89,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
             </h1>
 
             <p className="text-sm sm:text-lg text-slate-600 leading-relaxed max-w-xl font-medium">
-              Don't guess where to allocate MP LAD funds. <strong>People's Priorities™</strong> converts real citizen photos, audio voice notes, and text reports into structured, mathematically proven development intelligence.
+              <strong>People's Priorities™</strong> converts real citizen photos, audio voice notes, and text reports into structured, mathematically proven development intelligence.
             </p>
 
             {/* Region Status Banner */}
