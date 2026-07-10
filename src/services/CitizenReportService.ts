@@ -29,13 +29,52 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   }
 }
 
+async function compressPhotoForCloudSync(base64Str?: string): Promise<string | undefined> {
+  if (!base64Str || typeof window === 'undefined') return base64Str;
+  if (base64Str.length < 80000) return base64Str; // Already small thumbnail or clean base64
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 500;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(base64Str.slice(0, 80000));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.65));
+      };
+      img.onerror = () => resolve(base64Str.slice(0, 80000));
+      img.src = base64Str;
+    } catch (e) {
+      resolve(base64Str.slice(0, 80000));
+    }
+  });
+}
+
 function getSafeDatabaseInstance() {
   if (!hasValidFirebaseConfig()) return null;
   const { firebaseConfig } = getCloudConfig();
   try {
     const apps = getApps();
     const app = apps.length === 0 ? initializeApp(firebaseConfig) : apps[0];
-    return getDatabase(app);
+    const dbUrl = firebaseConfig.databaseURL || (firebaseConfig.projectId ? `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com` : undefined);
+    return getDatabase(app, dbUrl);
   } catch (err) {
     console.warn('Firebase Realtime Database initialization warning:', err);
     return null;
@@ -285,7 +324,7 @@ class CitizenReportServiceSingleton {
     const db = getSafeDatabaseInstance();
     let newReportId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     
-    // If Realtime Database is online, pre-allocate database key to keep IDs identical
+    // If Realtime Database is online, pre-allocate database key to keep IDs identical across all devices
     let dbRefPath: any = null;
     if (db) {
       const reportsRef = ref(db, 'citizen_reports');
@@ -304,6 +343,7 @@ class CitizenReportServiceSingleton {
     const newReport = this.normalizeReport({
       ...payload,
       id: newReportId,
+      clientSubmissionId: payload.clientSubmissionId || newReportId,
       createdAt: now.getTime(),
       timestamp: formattedNow,
     });
@@ -311,17 +351,16 @@ class CitizenReportServiceSingleton {
     // Save to map
     this.currentReportsMap.set(newReport.id, newReport);
 
-    // Save to IndexedDB (zero quota limit, holds high-res images)
+    // Save to IndexedDB (zero quota limit, holds full high-res images locally for prompt viewing)
     await saveReportToIndexedDB(this.toLiveReports([newReport])[0]);
 
-    // Non-blocking Cloud Realtime Database sync
+    // Non-blocking Cloud Realtime Database sync (compress images so mobile syncs in milliseconds)
     if (db && dbRefPath) {
+      const compressedPhoto = await compressPhotoForCloudSync(newReport.photoBase64);
       const rawPayload = {
         ...newReport,
-        photoBase64: newReport.photoBase64 && newReport.photoBase64.length > 600000
-          ? newReport.photoBase64.slice(0, 600000)
-          : newReport.photoBase64,
-        images: newReport.images?.map(img => img.length > 600000 ? img.slice(0, 600000) : img) || [],
+        photoBase64: compressedPhoto,
+        images: [],
         createdAt: serverTimestamp(),
       };
 
@@ -350,7 +389,7 @@ class CitizenReportServiceSingleton {
       const cloudPayload = cleanPayload(rawPayload);
 
       set(dbRefPath, cloudPayload)
-        .then(() => console.log('✅ Synchronized to Firebase Realtime Database:', newReport.id))
+        .then(() => console.log('✅ Synchronized to Firebase Realtime Database across all devices:', newReport.id))
         .catch((err) => console.warn('Realtime Database write fallback (stored locally):', err.message));
     }
 
@@ -558,26 +597,57 @@ class CitizenReportServiceSingleton {
         const reportsRef = ref(db, 'citizen_reports');
         this.unsubRealtime = onValue(
           reportsRef,
-          (snapshot) => {
+          async (snapshot) => {
             const val = snapshot.val();
             if (val) {
-              // Clear current cloud synced reports from map before merging snapshot values
+              const cloudSubmissionIds = new Set<string>();
+              
+              // Map all incoming cloud reports
+              const incomingCloudReports: CitizenReport[] = [];
+              Object.keys(val).forEach((key) => {
+                const data = val[key];
+                const normalized = this.normalizeReport({ ...data, id: key });
+                incomingCloudReports.push(normalized);
+                if (normalized.clientSubmissionId) {
+                  cloudSubmissionIds.add(normalized.clientSubmissionId);
+                }
+              });
+
+              // Check if we have any pending local reports (e.g. created offline or while connecting) that need pushing up
+              for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
+                if (key.startsWith('live-') || (rep.clientSubmissionId && !cloudSubmissionIds.has(rep.clientSubmissionId) && !key.startsWith('-'))) {
+                  // Push this pending local report up to Realtime Database so all devices see it immediately!
+                  try {
+                    const pushRef = push(reportsRef);
+                    const compressedPhoto = await compressPhotoForCloudSync(rep.photoBase64);
+                    const cloudPayload = {
+                      ...rep,
+                      id: pushRef.key || rep.id,
+                      photoBase64: compressedPhoto,
+                      images: [],
+                      createdAt: serverTimestamp(),
+                    };
+                    set(pushRef, cloudPayload).catch(() => {});
+                  } catch (err) {
+                    // ignore
+                  }
+                }
+              }
+
+              // Now clear old cloud keys from map and replace with latest exact state from Realtime Database
               for (const key of Array.from(this.currentReportsMap.keys())) {
                 if (!key.startsWith('rep-') && !key.startsWith('live-') && key !== 'mock') {
                   this.currentReportsMap.delete(key);
                 }
               }
 
-              Object.keys(val).forEach((key) => {
-                const data = val[key];
-                const normalized = this.normalizeReport({ ...data, id: key });
+              for (const normalized of incomingCloudReports) {
                 if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
                   this.currentReportsMap.delete(normalized.clientSubmissionId);
-                } else if (data.id && typeof data.id === 'string' && data.id.startsWith('rep-') && this.currentReportsMap.has(data.id)) {
-                  this.currentReportsMap.delete(data.id);
                 }
                 this.currentReportsMap.set(normalized.id, normalized);
-              });
+              }
+
               this.notifyAll();
             }
           },
@@ -594,6 +664,13 @@ class CitizenReportServiceSingleton {
     if (typeof window !== 'undefined') {
       window.addEventListener('liveReportPublished', () => this.refreshAndEmit());
       window.addEventListener('storage', () => this.refreshAndEmit());
+      window.addEventListener('cloudConfigChanged', () => {
+        if (this.unsubRealtime) {
+          this.unsubRealtime();
+          this.unsubRealtime = null;
+        }
+        this.startSingletonListener();
+      });
     }
     if (broadcastChannel) {
       broadcastChannel.addEventListener('message', (evt) => {

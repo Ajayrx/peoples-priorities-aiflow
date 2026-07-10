@@ -45,14 +45,15 @@ export function getCloudConfig(): CloudConfigState {
   }
 
   const geminiApiKey = savedConfig.geminiApiKey || envGeminiKey;
+  const projectId = savedConfig.firebaseConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultFirebase.projectId;
   const firebaseConfig: FirebaseConfig = {
     apiKey: savedConfig.firebaseConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || defaultFirebase.apiKey,
     authDomain: savedConfig.firebaseConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || defaultFirebase.authDomain,
-    projectId: savedConfig.firebaseConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultFirebase.projectId,
+    projectId: projectId,
     storageBucket: savedConfig.firebaseConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || defaultFirebase.storageBucket,
     messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultFirebase.messagingSenderId,
     appId: savedConfig.firebaseConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || defaultFirebase.appId,
-    databaseURL: savedConfig.firebaseConfig?.databaseURL || import.meta.env.VITE_FIREBASE_DATABASE_URL || defaultFirebase.databaseURL,
+    databaseURL: savedConfig.firebaseConfig?.databaseURL || import.meta.env.VITE_FIREBASE_DATABASE_URL || (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : defaultFirebase.databaseURL),
   };
 
   const useLiveFirebase = Boolean(
