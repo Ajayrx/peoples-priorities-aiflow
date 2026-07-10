@@ -42,12 +42,9 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
 
-        let orthoEdges = 0;
-        let screenRGBGlow = 0;
         let darkCavityPixels = 0;
         let muddyWaterPixels = 0;
         let highContrastEdges = 0;
-        let totalBrightness = 0;
 
         for (let y = 2; y < height - 2; y++) {
           for (let x = 2; x < width - 2; x++) {
@@ -56,7 +53,6 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
             const g = data[idx + 1];
             const b = data[idx + 2];
             const luma = r * 0.299 + g * 0.587 + b * 0.114;
-            totalBrightness += luma;
 
             // Horizontal vs Vertical neighbor differences
             const rightIdx = (y * width + (x + 2)) * 4;
@@ -64,17 +60,8 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
             const hDiff = Math.abs(luma - (data[rightIdx] * 0.299 + data[rightIdx + 1] * 0.587 + data[rightIdx + 2] * 0.114));
             const vDiff = Math.abs(luma - (data[bottomIdx] * 0.299 + data[bottomIdx + 1] * 0.587 + data[bottomIdx + 2] * 0.114));
 
-            // Sharp rectilinear screen / keyboard key lines
-            if ((hDiff > 40 && vDiff < 8) || (vDiff > 40 && hDiff < 8)) {
-              orthoEdges++;
-            }
             if (hDiff > 30 || vDiff > 30) {
               highContrastEdges++;
-            }
-
-            // Electronic display subpixel emission (monitor/phone screen/laptop)
-            if ((b > 170 && r < 110 && g > 140) || (luma > 220 && (hDiff > 35 || vDiff > 35)) || (r > 210 && g < 130 && b < 130)) {
-              screenRGBGlow++;
             }
 
             // Dark cavity / deep pothole center
@@ -90,46 +77,27 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
         }
 
         const totalPixels = (width - 4) * (height - 4);
-        const orthoRatio = orthoEdges / totalPixels;
-        const glowRatio = screenRGBGlow / totalPixels;
         const cavityRatio = darkCavityPixels / totalPixels;
         const waterRatio = muddyWaterPixels / totalPixels;
         const edgeRatio = highContrastEdges / totalPixels;
-
-        // ULTRA-SENSITIVE REJECTION CHECK: Detect Laptop Screens, Keyboards, Monitors, or Indoor Furniture
-        const isLaptopOrScreen = orthoRatio > 0.08 || glowRatio > 0.09 || (orthoRatio > 0.05 && cavityRatio < 0.03 && edgeRatio > 0.18);
-
-        if (isLaptopOrScreen) {
-          resolve({
-            confidenceScore: 99,
-            detectedIssue: '[REJECTED] Non-Civic Photo (Detected Laptop Screen / Keyboard / Indoor Object)',
-            category: 'Road',
-            priorityLevel: 'MONITORED',
-            urgencyReasoning: 'Photo verification REJECTED. Our visual scan detected an indoor electronic screen, keyboard, monitor, or non-civic subject instead of public infrastructure. Please capture a real outdoor photo showing actual roadway, bridge, or drainage deterioration.',
-            isRealApiEval: false,
-          });
-          return;
-        }
 
         // Intelligent Multi-Spectral Infrastructure Classification
         let category: CategoryType = 'Road';
         let detectedIssue = 'Severe Pavement Break & Surface Washout';
         let confidenceScore = Math.min(98, Math.max(88, Math.round(82 + edgeRatio * 65 + cavityRatio * 45)));
         let priorityLevel: PriorityLevel = 'CRITICAL';
-        let urgencyReasoning = 'Photo evidence verified: significant road surface deterioration and structural damage requiring immediate civic repair.';
+        let urgencyReasoning = '';
 
         if (waterRatio > 0.22 && waterRatio > cavityRatio) {
           category = 'Drainage';
           detectedIssue = 'Severe Urban Stormwater & Box Culvert Overflow';
           confidenceScore = Math.min(97, Math.max(87, Math.round(84 + waterRatio * 50)));
           priorityLevel = 'CRITICAL';
-          urgencyReasoning = 'Photo evidence verified: acute waterlogging and drainage channel blockage requiring urgent clearing and repair.';
         } else if (edgeRatio < 0.11 && cavityRatio < 0.03) {
           category = 'Road';
           detectedIssue = 'Moderate Asphalt Weathering & Micro-Cracking';
           confidenceScore = Math.max(82, Math.min(90, Math.round(76 + edgeRatio * 85)));
           priorityLevel = 'MEDIUM';
-          urgencyReasoning = 'Photo evidence verified: early-stage surface weathering and asphalt cracking requiring preventive maintenance.';
         }
 
         resolve({
@@ -143,10 +111,10 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
       } catch (err) {
         resolve({
           confidenceScore: 94,
-          detectedIssue: 'Verified Infrastructure Deterioration Sample',
+          detectedIssue: 'Civic Infrastructure Defect',
           category: 'Road',
           priorityLevel: 'HIGH',
-          urgencyReasoning: 'Image structure confirms high-priority infrastructure repair requirement.',
+          urgencyReasoning: '',
           isRealApiEval: false,
         });
       }
@@ -154,10 +122,10 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
     img.onerror = () => {
       resolve({
         confidenceScore: 92,
-        detectedIssue: 'Verified Infrastructure Damage Sample',
+        detectedIssue: 'Civic Infrastructure Defect',
         category: 'Road',
         priorityLevel: 'HIGH',
-        urgencyReasoning: 'Locality damage verified. Priority dispatch queue assigned.',
+        urgencyReasoning: '',
         isRealApiEval: false,
       });
     };
@@ -183,17 +151,18 @@ export async function evaluateLocalityPhoto(base64Image: string): Promise<Gemini
       'gemini-1.5-pro'
     ];
 
-    const promptText = `You are the People's Priorities AI Vision verification engine analyzing a photo uploaded by a citizen.
-First, verify if this photo actually shows outdoor civic infrastructure or damage (e.g., road, pothole, drainage, water pipe, school building, hospital, street light).
-If the photo shows a LAPTOP SCREEN, KEYBOARD, MONITOR, INDOOR ROOM, HUMAN FACE, ANIMAL, or unrelated object, you MUST REJECT IT immediately.
+    const promptText = `You are an AI assistant helping categorize and title a citizen-uploaded photo for a civic infrastructure issue.
+Carefully examine the photo and determine which civic category it best fits into: "Road", "Drainage", "Water", "Schools", "Healthcare", or "Electricity".
+Provide a clear, concise 3-to-6 word title describing what is visible in the photo (for example: "Severe Road Surface Pothole" or "Broken Water Pipe Leakage").
+Do NOT reject photos or generate any lengthy AI commentary or verification text.
 
-Analyze the image and respond ONLY with a valid JSON object matching exactly these keys:
+Respond ONLY with a valid JSON object matching exactly these keys:
 {
-  "confidenceScore": number (0 to 100 representing certainty of defect or rejection),
-  "detectedIssue": string (e.g. "Severe 3-Foot Pothole & Road Surface Washout" OR if rejected: "[REJECTED] Non-Civic Photo (Detected Laptop Screen / Indoor Object)"),
+  "confidenceScore": number (85 to 99),
+  "detectedIssue": string (clear, concise 3-to-6 word issue title based on the photo without any commentary),
   "category": string (MUST be one of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity"),
-  "priorityLevel": string (MUST be one of: "CRITICAL", "HIGH", "MEDIUM", "MONITORED"),
-  "urgencyReasoning": string (1-2 detailed sentences explaining the exact civic defect and citizen safety impact OR explaining why the photo was rejected for showing an electronic screen / indoor item)
+  "priorityLevel": string (one of: "CRITICAL", "HIGH", "MEDIUM"),
+  "urgencyReasoning": string (always leave as empty string "")
 }`;
 
     for (const modelName of modelsToTry) {
@@ -234,10 +203,10 @@ Analyze the image and respond ONLY with a valid JSON object matching exactly the
               const rawPriority = parsed.priorityLevel === 'LOW' ? 'MONITORED' : parsed.priorityLevel;
               return {
                 confidenceScore: Number(parsed.confidenceScore) || 96,
-                detectedIssue: parsed.detectedIssue || 'Verified Locality Infrastructure Defect',
+                detectedIssue: parsed.detectedIssue || 'Civic Infrastructure Defect',
                 category: (['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity'].includes(parsed.category) ? parsed.category : 'Road') as CategoryType,
                 priorityLevel: (['CRITICAL', 'HIGH', 'MEDIUM', 'MONITORED'].includes(rawPriority) ? rawPriority : 'HIGH') as PriorityLevel,
-                urgencyReasoning: parsed.urgencyReasoning || 'AI Vision verified visual deterioration requiring priority maintenance.',
+                urgencyReasoning: parsed.urgencyReasoning || '',
                 isRealApiEval: true,
               };
             } catch (jsonErr) {

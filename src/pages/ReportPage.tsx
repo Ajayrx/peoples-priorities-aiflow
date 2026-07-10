@@ -302,10 +302,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
 
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (intakeMode === 'PHOTO' && visionResult?.detectedIssue?.includes('[REJECTED]')) {
-      alert('⚠️ CANNOT SUBMIT REPORT:\n\nOur AI pre-submission filter rejected this photo because it shows a laptop screen, keyboard, indoor room, or non-civic object instead of public infrastructure damage.\n\nPlease snap or upload a photo of actual outdoor road/pavement damage, drainage overflow, or civic deterioration.');
-      return;
-    }
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 750));
     await submitReport({
@@ -314,7 +310,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
       priorityLevel: visionResult?.priorityLevel || 'HIGH',
       priorityScore: visionResult?.confidenceScore || 94,
       detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Reported defect')),
-      urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.urgencyReasoning || 'Photo evidence verified for civic maintenance.') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
+      urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.urgencyReasoning || visionResult?.detectedIssue || 'Civic infrastructure report') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
       photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
       intakeType: intakeMode,
       location: {
