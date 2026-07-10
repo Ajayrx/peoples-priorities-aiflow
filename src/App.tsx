@@ -80,7 +80,7 @@ export function App() {
           )}
 
           {currentTab === 'report' && (
-            <ReportPage region={region} onNavigate={navigateTo} />
+            <ReportPage region={region} onSelectRegion={setRegion} onNavigate={navigateTo} />
           )}
 
           {currentTab === 'management' && (

@@ -484,8 +484,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                               </p>
                               <div className="text-[10px] sm:text-[11px] font-mono text-emerald-800 mt-1.5 flex items-center gap-1.5 flex-wrap min-w-0 break-words">
                                 <span className="truncate min-w-0">📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
-                                <span>•</span>
-                                <span className="shrink-0">AI Verification: 100% Passed</span>
                               </div>
                             </div>
                           </div>

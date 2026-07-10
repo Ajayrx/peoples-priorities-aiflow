@@ -7,6 +7,7 @@ export interface FirebaseConfig {
   storageBucket?: string;
   messagingSenderId?: string;
   appId?: string;
+  databaseURL?: string;
 }
 
 export interface CloudConfigState {
@@ -27,6 +28,7 @@ export function getCloudConfig(): CloudConfigState {
     storageBucket: 'peoples-priorities-cloud.firebasestorage.app',
     messagingSenderId: '470632059939',
     appId: '1:470632059939:web:8a5490234d70e072bc0d96',
+    databaseURL: 'https://peoples-priorities-cloud-default-rtdb.firebaseio.com',
   };
 
   const envGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || defaultGeminiKey;
@@ -50,6 +52,7 @@ export function getCloudConfig(): CloudConfigState {
     storageBucket: savedConfig.firebaseConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || defaultFirebase.storageBucket,
     messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultFirebase.messagingSenderId,
     appId: savedConfig.firebaseConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || defaultFirebase.appId,
+    databaseURL: savedConfig.firebaseConfig?.databaseURL || import.meta.env.VITE_FIREBASE_DATABASE_URL || defaultFirebase.databaseURL,
   };
 
   const useLiveFirebase = Boolean(

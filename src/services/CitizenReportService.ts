@@ -1,18 +1,15 @@
 // Single canonical source of truth for People's Priorities Citizen Reports & GIS Hotspots
 import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore,
-  collection,
-  addDoc,
-  doc,
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  limit,
+  getDatabase,
+  ref,
+  set,
+  push,
+  onValue,
+  update,
+  remove,
   serverTimestamp
-} from 'firebase/firestore';
+} from 'firebase/database';
 import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
 import type { CitizenReport, Hotspot, CategoryType, PriorityLevel, DashboardStats } from '../types';
 import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
@@ -32,22 +29,22 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   }
 }
 
-function getSafeFirestoreInstance() {
+function getSafeDatabaseInstance() {
   if (!hasValidFirebaseConfig()) return null;
   const { firebaseConfig } = getCloudConfig();
   try {
     const apps = getApps();
     const app = apps.length === 0 ? initializeApp(firebaseConfig) : apps[0];
-    return getFirestore(app);
+    return getDatabase(app);
   } catch (err) {
-    console.warn('Firebase initialization warning:', err);
+    console.warn('Firebase Realtime Database initialization warning:', err);
     return null;
   }
 }
 
 class CitizenReportServiceSingleton {
   private activeListeners: Set<(reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void> = new Set();
-  private unsubFirestore: (() => void) | null = null;
+  private unsubRealtime: (() => void) | null = null;
   private currentReportsMap: Map<string, CitizenReport> = new Map();
   private baseHotspots: Hotspot[] = [];
 
@@ -268,9 +265,22 @@ class CitizenReportServiceSingleton {
    * Submits a new citizen report to IndexedDB, Cloud Firestore, and broadcasts across all tabs/pages.
    */
   public async submitCitizenReport(payload: Partial<CitizenReport> & { photoBase64?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }): Promise<CitizenReport> {
+    const db = getSafeDatabaseInstance();
+    let newReportId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    
+    // If Realtime Database is online, pre-allocate database key to keep IDs identical
+    let dbRefPath: any = null;
+    if (db) {
+      const reportsRef = ref(db, 'citizen_reports');
+      dbRefPath = push(reportsRef);
+      if (dbRefPath.key) {
+        newReportId = dbRefPath.key;
+      }
+    }
+
     const newReport = this.normalizeReport({
       ...payload,
-      id: `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: newReportId,
       timestamp: 'Just now',
     });
 
@@ -280,9 +290,8 @@ class CitizenReportServiceSingleton {
     // Save to IndexedDB (zero quota limit, holds high-res images)
     await saveReportToIndexedDB(this.toLiveReports([newReport])[0]);
 
-    // Non-blocking Cloud Firestore sync
-    const db = getSafeFirestoreInstance();
-    if (db) {
+    // Non-blocking Cloud Realtime Database sync
+    if (db && dbRefPath) {
       const rawPayload = {
         ...newReport,
         photoBase64: newReport.photoBase64 && newReport.photoBase64.length > 600000
@@ -292,10 +301,10 @@ class CitizenReportServiceSingleton {
         createdAt: serverTimestamp(),
       };
 
-      // Helper function to remove undefined fields recursively so Firestore doesn't throw a validation error
+      // Helper function to remove undefined fields recursively so Realtime Database doesn't throw a validation error
       const cleanPayload = (obj: any): any => {
         if (obj === null || obj === undefined) return null;
-        if (obj && typeof obj === 'object' && ('_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
+        if (obj && typeof obj === 'object' && ('.sv' in obj || '_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
           return obj;
         }
         if (Array.isArray(obj)) {
@@ -316,9 +325,9 @@ class CitizenReportServiceSingleton {
 
       const cloudPayload = cleanPayload(rawPayload);
 
-      addDoc(collection(db, 'citizen_reports'), cloudPayload)
-        .then((docRef: any) => console.log('✅ Synchronized to Google Cloud Firestore:', docRef?.id))
-        .catch((err) => console.warn('Cloud write fallback (stored in local ledger):', err.message));
+      set(dbRefPath, cloudPayload)
+        .then(() => console.log('✅ Synchronized to Firebase Realtime Database:', newReport.id))
+        .catch((err) => console.warn('Realtime Database write fallback (stored locally):', err.message));
     }
 
     // Save to localStorage safely
@@ -357,12 +366,36 @@ class CitizenReportServiceSingleton {
     this.currentReportsMap.set(id, updated);
     await saveReportToIndexedDB(this.toLiveReports([updated])[0]);
 
-    const db = getSafeFirestoreInstance();
+    const db = getSafeDatabaseInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
       try {
-        await updateDoc(doc(db, 'citizen_reports', id), updates as any);
+        const reportRef = ref(db, `citizen_reports/${id}`);
+        
+        // Helper function to remove undefined fields recursively
+        const cleanPayload = (obj: any): any => {
+          if (obj === null || obj === undefined) return null;
+          if (obj && typeof obj === 'object' && ('.sv' in obj || '_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
+            return obj;
+          }
+          if (Array.isArray(obj)) {
+            return obj.map(cleanPayload);
+          }
+          if (typeof obj === 'object') {
+            const cleaned: any = {};
+            for (const key of Object.keys(obj)) {
+              const val = obj[key];
+              if (val !== undefined) {
+                cleaned[key] = cleanPayload(val);
+              }
+            }
+            return cleaned;
+          }
+          return obj;
+        };
+
+        await update(reportRef, cleanPayload(updates));
       } catch (err) {
-        console.warn('Cloud update warning:', err);
+        console.warn('Realtime Database update failed:', err);
       }
     }
     this.notifyAll();
@@ -375,12 +408,13 @@ class CitizenReportServiceSingleton {
     this.currentReportsMap.delete(id);
     await deleteReportFromIndexedDB(id);
 
-    const db = getSafeFirestoreInstance();
-    if (db && !id.startsWith('live-')) {
+    const db = getSafeDatabaseInstance();
+    if (db && !id.startsWith('live-') && id !== 'mock') {
       try {
-        await deleteDoc(doc(db, 'citizen_reports', id));
+        const reportRef = ref(db, `citizen_reports/${id}`);
+        await remove(reportRef);
       } catch (err) {
-        console.warn('Cloud delete warning:', err);
+        console.warn('Realtime Database delete failed:', err);
       }
     }
     this.notifyAll();
@@ -396,14 +430,14 @@ class CitizenReportServiceSingleton {
 
   /**
    * Subscribes to canonical live updates across the entire application.
-   * Guarantees EXACTLY ONE active Firestore onSnapshot listener regardless of how many pages subscribe.
+   * Guarantees EXACTLY ONE active Realtime Database listener regardless of how many pages subscribe.
    */
   public subscribe(
     onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void
   ): () => void {
     this.activeListeners.add(onUpdate);
 
-    // If this is our very first subscriber, start the single real-time Firestore listener
+    // If this is our very first subscriber, start the single real-time database listener
     if (this.activeListeners.size === 1) {
       this.startSingletonListener();
     } else {
@@ -413,15 +447,41 @@ class CitizenReportServiceSingleton {
 
     return () => {
       this.activeListeners.delete(onUpdate);
-      if (this.activeListeners.size === 0 && this.unsubFirestore) {
-        this.unsubFirestore();
-        this.unsubFirestore = null;
+      if (this.activeListeners.size === 0 && this.unsubRealtime) {
+        this.unsubRealtime();
+        this.unsubRealtime = null;
       }
     };
   }
 
   private getAllUnifiedReports(reportsList: CitizenReport[], hotspotsList: Hotspot[]): CitizenReport[] {
     const map = new Map<string, CitizenReport>();
+    const seenKeys = new Set<string>();
+
+    const addSafe = (r: CitizenReport) => {
+      // Create a unique key for deduplication based on content and coordinates
+      // (rounding coordinates to 4 decimal places, e.g. 11m precision)
+      const latKey = Number(r.latitude).toFixed(4);
+      const lngKey = Number(r.longitude).toFixed(4);
+      
+      const cleanDesc = (r.description || '').trim().toLowerCase();
+      const contentKey = `${latKey}_${lngKey}_${r.category}_${cleanDesc.slice(0, 80)}`;
+
+      if (r.clientSubmissionId) {
+        if (seenKeys.has(r.clientSubmissionId)) return;
+        seenKeys.add(r.clientSubmissionId);
+      }
+      
+      if (seenKeys.has(contentKey)) return;
+      seenKeys.add(contentKey);
+
+      map.set(r.id, r);
+    };
+
+    reportsList.forEach((r) => {
+      addSafe(r);
+    });
+
     hotspotsList.forEach((hs) => {
       (hs.recentReports || []).forEach((r) => {
         const norm = this.normalizeReport({
@@ -432,12 +492,10 @@ class CitizenReportServiceSingleton {
           latitude: r.latitude || r.location?.lat || hs.location?.center?.lat || 20.5937,
           longitude: r.longitude || r.location?.lng || hs.location?.center?.lng || 78.9629,
         });
-        map.set(norm.id, norm);
+        addSafe(norm);
       });
     });
-    reportsList.forEach((r) => {
-      map.set(r.id, r);
-    });
+
     return Array.from(map.values()).sort((a, b) => {
       const scoreA = a.priorityScore || a.aiConfidence || 90;
       const scoreB = b.priorityScore || b.aiConfidence || 90;
@@ -469,32 +527,42 @@ class CitizenReportServiceSingleton {
     // 1. Initial local load from IndexedDB and localStorage
     await this.refreshAndEmit();
 
-    // 2. Setup single global Firestore subscription
-    const db = getSafeFirestoreInstance();
-    if (db && !this.unsubFirestore) {
+    // 2. Setup single global Realtime Database subscription
+    const db = getSafeDatabaseInstance();
+    if (db && !this.unsubRealtime) {
       try {
-        const q = query(collection(db, 'citizen_reports'), orderBy('createdAt', 'desc'), limit(50));
-        this.unsubFirestore = onSnapshot(
-          q,
+        const reportsRef = ref(db, 'citizen_reports');
+        this.unsubRealtime = onValue(
+          reportsRef,
           (snapshot) => {
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              const normalized = this.normalizeReport({ ...data, id: docSnap.id });
-              if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
-                this.currentReportsMap.delete(normalized.clientSubmissionId);
-              } else if (data.id && typeof data.id === 'string' && data.id.startsWith('rep-') && this.currentReportsMap.has(data.id)) {
-                this.currentReportsMap.delete(data.id);
+            const val = snapshot.val();
+            if (val) {
+              // Clear current cloud synced reports from map before merging snapshot values
+              for (const key of Array.from(this.currentReportsMap.keys())) {
+                if (!key.startsWith('rep-') && !key.startsWith('live-') && key !== 'mock') {
+                  this.currentReportsMap.delete(key);
+                }
               }
-              this.currentReportsMap.set(normalized.id, normalized);
-            });
-            this.notifyAll();
+
+              Object.keys(val).forEach((key) => {
+                const data = val[key];
+                const normalized = this.normalizeReport({ ...data, id: key });
+                if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
+                  this.currentReportsMap.delete(normalized.clientSubmissionId);
+                } else if (data.id && typeof data.id === 'string' && data.id.startsWith('rep-') && this.currentReportsMap.has(data.id)) {
+                  this.currentReportsMap.delete(data.id);
+                }
+                this.currentReportsMap.set(normalized.id, normalized);
+              });
+              this.notifyAll();
+            }
           },
           (err) => {
-            console.warn('Firestore subscription status:', err.message);
+            console.warn('Realtime Database subscription status:', err.message);
           }
         );
       } catch (e) {
-        console.warn('Error connecting to Firestore:', e);
+        console.warn('Error connecting to Realtime Database:', e);
       }
     }
 
