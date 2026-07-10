@@ -1,15 +1,18 @@
 // Single canonical source of truth for People's Priorities Citizen Reports & GIS Hotspots
 import { initializeApp, getApps } from 'firebase/app';
 import {
-  getDatabase,
-  ref,
-  set,
-  push,
-  onValue,
-  update,
-  remove,
+  getFirestore,
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  limit,
   serverTimestamp
-} from 'firebase/database';
+} from 'firebase/firestore';
 import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
 import type { CitizenReport, Hotspot, CategoryType, PriorityLevel, DashboardStats } from '../types';
 import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
@@ -67,16 +70,15 @@ async function compressPhotoForCloudSync(base64Str?: string): Promise<string | u
   });
 }
 
-function getSafeDatabaseInstance() {
+function getSafeFirestoreInstance() {
   if (!hasValidFirebaseConfig()) return null;
   const { firebaseConfig } = getCloudConfig();
   try {
     const apps = getApps();
     const app = apps.length === 0 ? initializeApp(firebaseConfig) : apps[0];
-    const dbUrl = firebaseConfig.databaseURL || (firebaseConfig.projectId ? `https://${firebaseConfig.projectId}-default-rtdb.firebaseio.com` : undefined);
-    return getDatabase(app, dbUrl);
+    return getFirestore(app);
   } catch (err) {
-    console.warn('Firebase Realtime Database initialization warning:', err);
+    console.error('🔥 Firebase Cloud Firestore initialization warning:', err);
     return null;
   }
 }
@@ -321,18 +323,8 @@ class CitizenReportServiceSingleton {
    * Submits a new citizen report to IndexedDB, Cloud Firestore, and broadcasts across all tabs/pages.
    */
   public async submitCitizenReport(payload: Partial<CitizenReport> & { photoBase64?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }): Promise<CitizenReport> {
-    const db = getSafeDatabaseInstance();
+    const db = getSafeFirestoreInstance();
     let newReportId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    
-    // If Realtime Database is online, pre-allocate database key to keep IDs identical across all devices
-    let dbRefPath: any = null;
-    if (db) {
-      const reportsRef = ref(db, 'citizen_reports');
-      dbRefPath = push(reportsRef);
-      if (dbRefPath.key) {
-        newReportId = dbRefPath.key;
-      }
-    }
 
     const now = new Date();
     const day = now.toLocaleDateString('en-IN', { weekday: 'short' });
@@ -348,52 +340,65 @@ class CitizenReportServiceSingleton {
       timestamp: formattedNow,
     });
 
-    // Save to map
+    // Save to map initially
     this.currentReportsMap.set(newReport.id, newReport);
 
     // Save to IndexedDB (zero quota limit, holds full high-res images locally for prompt viewing)
     await saveReportToIndexedDB(this.toLiveReports([newReport])[0]);
 
-    // Non-blocking Cloud Realtime Database sync (compress images so mobile syncs in milliseconds)
-    if (db && dbRefPath) {
-      const compressedPhoto = await compressPhotoForCloudSync(newReport.photoBase64);
-      const rawPayload = {
-        ...newReport,
-        photoBase64: compressedPhoto,
-        images: [],
-        createdAt: serverTimestamp(),
-      };
+    // Cloud Firestore write (Single Source of Truth)
+    if (db) {
+      try {
+        const compressedPhoto = await compressPhotoForCloudSync(newReport.photoBase64);
+        const rawPayload = {
+          ...newReport,
+          photoBase64: compressedPhoto,
+          images: [],
+          createdAt: serverTimestamp(),
+        };
+        delete (rawPayload as any).id;
 
-      // Helper function to remove undefined fields recursively so Realtime Database doesn't throw a validation error
-      const cleanPayload = (obj: any): any => {
-        if (obj === null || obj === undefined) return null;
-        if (obj && typeof obj === 'object' && ('.sv' in obj || '_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
-          return obj;
-        }
-        if (Array.isArray(obj)) {
-          return obj.map(cleanPayload);
-        }
-        if (typeof obj === 'object') {
-          const cleaned: any = {};
-          for (const key of Object.keys(obj)) {
-            const val = obj[key];
-            if (val !== undefined) {
-              cleaned[key] = cleanPayload(val);
-            }
+        // Helper function to remove undefined fields recursively so Firestore doesn't throw invalid data error
+        const cleanPayload = (obj: any): any => {
+          if (obj === null || obj === undefined) return null;
+          if (obj && typeof obj === 'object' && ('.sv' in obj || '_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
+            return obj;
           }
-          return cleaned;
-        }
-        return obj;
-      };
+          if (Array.isArray(obj)) {
+            return obj.map(cleanPayload);
+          }
+          if (typeof obj === 'object') {
+            const cleaned: any = {};
+            for (const key of Object.keys(obj)) {
+              const val = obj[key];
+              if (val !== undefined) {
+                cleaned[key] = cleanPayload(val);
+              }
+            }
+            return cleaned;
+          }
+          return obj;
+        };
 
-      const cloudPayload = cleanPayload(rawPayload);
+        const cloudPayload = cleanPayload(rawPayload);
+        const docRef = await addDoc(collection(db, 'citizen_reports'), cloudPayload);
+        console.log('✅ Successfully published verified citizen complaint to Firestore! Document ID:', docRef.id);
 
-      set(dbRefPath, cloudPayload)
-        .then(() => console.log('✅ Synchronized to Firebase Realtime Database across all devices:', newReport.id))
-        .catch((err) => console.warn('Realtime Database write fallback (stored locally):', err.message));
+        const finalReport = this.normalizeReport({
+          ...newReport,
+          id: docRef.id,
+        });
+        this.currentReportsMap.delete(newReport.id);
+        this.currentReportsMap.set(finalReport.id, finalReport);
+        await saveReportToIndexedDB(this.toLiveReports([finalReport])[0]);
+        this.notifyAll();
+        return finalReport;
+      } catch (err: any) {
+        console.error('🔥 Firestore Write Failed:', err);
+      }
     }
 
-    // Save to localStorage safely
+    // Save to localStorage safely as offline fallback
     try {
       const rawLocal = localStorage.getItem(STORAGE_KEY_REPORTS);
       const existing = rawLocal ? JSON.parse(rawLocal) : [];
@@ -429,10 +434,10 @@ class CitizenReportServiceSingleton {
     this.currentReportsMap.set(id, updated);
     await saveReportToIndexedDB(this.toLiveReports([updated])[0]);
 
-    const db = getSafeDatabaseInstance();
+    const db = getSafeFirestoreInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
       try {
-        const reportRef = ref(db, `citizen_reports/${id}`);
+        const reportRef = doc(db, 'citizen_reports', id);
         
         // Helper function to remove undefined fields recursively
         const cleanPayload = (obj: any): any => {
@@ -456,9 +461,9 @@ class CitizenReportServiceSingleton {
           return obj;
         };
 
-        await update(reportRef, cleanPayload(updates));
+        await updateDoc(reportRef, cleanPayload(updates));
       } catch (err) {
-        console.warn('Realtime Database update failed:', err);
+        console.error('🔥 Firestore update failed:', err);
       }
     }
     this.notifyAll();
@@ -471,13 +476,13 @@ class CitizenReportServiceSingleton {
     this.currentReportsMap.delete(id);
     await deleteReportFromIndexedDB(id);
 
-    const db = getSafeDatabaseInstance();
+    const db = getSafeFirestoreInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
       try {
-        const reportRef = ref(db, `citizen_reports/${id}`);
-        await remove(reportRef);
+        const reportRef = doc(db, 'citizen_reports', id);
+        await deleteDoc(reportRef);
       } catch (err) {
-        console.warn('Realtime Database delete failed:', err);
+        console.error('🔥 Firestore delete failed:', err);
       }
     }
     this.notifyAll();
@@ -590,73 +595,67 @@ class CitizenReportServiceSingleton {
     // 1. Initial local load from IndexedDB and localStorage
     await this.refreshAndEmit();
 
-    // 2. Setup single global Realtime Database subscription
-    const db = getSafeDatabaseInstance();
+    // 2. Setup single global Cloud Firestore subscription
+    const db = getSafeFirestoreInstance();
     if (db && !this.unsubRealtime) {
       try {
-        const reportsRef = ref(db, 'citizen_reports');
-        this.unsubRealtime = onValue(
-          reportsRef,
+        const q = query(collection(db, 'citizen_reports'), orderBy('createdAt', 'desc'), limit(150));
+        this.unsubRealtime = onSnapshot(
+          q,
           async (snapshot) => {
-            const val = snapshot.val();
-            if (val) {
-              const cloudSubmissionIds = new Set<string>();
-              
-              // Map all incoming cloud reports
-              const incomingCloudReports: CitizenReport[] = [];
-              Object.keys(val).forEach((key) => {
-                const data = val[key];
-                const normalized = this.normalizeReport({ ...data, id: key });
-                incomingCloudReports.push(normalized);
-                if (normalized.clientSubmissionId) {
-                  cloudSubmissionIds.add(normalized.clientSubmissionId);
-                }
-              });
+            const cloudSubmissionIds = new Set<string>();
+            const incomingCloudReports: CitizenReport[] = [];
 
-              // Check if we have any pending local reports (e.g. created offline or while connecting) that need pushing up
-              for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
-                if (key.startsWith('live-') || (rep.clientSubmissionId && !cloudSubmissionIds.has(rep.clientSubmissionId) && !key.startsWith('-'))) {
-                  // Push this pending local report up to Realtime Database so all devices see it immediately!
-                  try {
-                    const pushRef = push(reportsRef);
-                    const compressedPhoto = await compressPhotoForCloudSync(rep.photoBase64);
-                    const cloudPayload = {
-                      ...rep,
-                      id: pushRef.key || rep.id,
-                      photoBase64: compressedPhoto,
-                      images: [],
-                      createdAt: serverTimestamp(),
-                    };
-                    set(pushRef, cloudPayload).catch(() => {});
-                  } catch (err) {
-                    // ignore
-                  }
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              const normalized = this.normalizeReport({ ...data, id: docSnap.id });
+              incomingCloudReports.push(normalized);
+              if (normalized.clientSubmissionId) {
+                cloudSubmissionIds.add(normalized.clientSubmissionId);
+              }
+            });
+
+            // Check if we have any pending local reports created offline while connecting that need pushing up
+            for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
+              if (key.startsWith('live-') || (rep.clientSubmissionId && !cloudSubmissionIds.has(rep.clientSubmissionId) && !key.startsWith('rep-') && key !== 'mock')) {
+                try {
+                  const compressedPhoto = await compressPhotoForCloudSync(rep.photoBase64);
+                  const cloudPayload = {
+                    ...rep,
+                    photoBase64: compressedPhoto,
+                    images: [],
+                    createdAt: serverTimestamp(),
+                  };
+                  delete (cloudPayload as any).id;
+                  addDoc(collection(db, 'citizen_reports'), cloudPayload).catch(() => {});
+                } catch (err) {
+                  // ignore
                 }
               }
-
-              // Now clear old cloud keys from map and replace with latest exact state from Realtime Database
-              for (const key of Array.from(this.currentReportsMap.keys())) {
-                if (!key.startsWith('rep-') && !key.startsWith('live-') && key !== 'mock') {
-                  this.currentReportsMap.delete(key);
-                }
-              }
-
-              for (const normalized of incomingCloudReports) {
-                if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
-                  this.currentReportsMap.delete(normalized.clientSubmissionId);
-                }
-                this.currentReportsMap.set(normalized.id, normalized);
-              }
-
-              this.notifyAll();
             }
+
+            // Clear old cloud keys from map and replace with latest exact state from Cloud Firestore
+            for (const key of Array.from(this.currentReportsMap.keys())) {
+              if (!key.startsWith('rep-') && !key.startsWith('live-') && key !== 'mock') {
+                this.currentReportsMap.delete(key);
+              }
+            }
+
+            for (const normalized of incomingCloudReports) {
+              if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
+                this.currentReportsMap.delete(normalized.clientSubmissionId);
+              }
+              this.currentReportsMap.set(normalized.id, normalized);
+            }
+
+            this.notifyAll();
           },
           (err) => {
-            console.warn('Realtime Database subscription status:', err.message);
+            console.error('🔥 Firestore onSnapshot subscription error:', err.message);
           }
         );
       } catch (e) {
-        console.warn('Error connecting to Realtime Database:', e);
+        console.error('🔥 Error connecting to Cloud Firestore:', e);
       }
     }
 
