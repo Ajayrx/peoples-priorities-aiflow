@@ -7,7 +7,6 @@
 ![Google Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Pro-4285F4)
 ![React](https://img.shields.io/badge/React-19-61DAFB)
 ![Firebase](https://img.shields.io/badge/Firebase-Cloud-orange)
-![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
@@ -75,7 +74,7 @@ MP / Local Authority
 
 # ✨ Features
 
-- 🎤 Multimodal citizen reporting (Voice, Photo & Text)
+- 🎤 Citizen reporting (Voice, Photo & Text)
 - 🌍 Multilingual AI support
 - 🗺️ Interactive constituency hotspot map
 - 🤖 AI-generated summaries and insights
@@ -99,7 +98,6 @@ MP / Local Authority
 
 ## Backend
 
-- Firebase Authentication
 - Cloud Firestore
 - Firebase Storage
 - Firebase Hosting
@@ -116,6 +114,7 @@ MP / Local Authority
 - Census Data
 - Public Infrastructure Data
 - GeoJSON
+- Leaflet
 
 ## Development
 
@@ -123,6 +122,7 @@ MP / Local Authority
 - Git
 - GitHub
 - VS Code
+- Vercel Deploy
 
 ---
 
@@ -163,7 +163,7 @@ Unlike traditional complaint portals, People's Priorities:
 
 # 📷 Screenshots
 
-Add screenshots here.
+soon
 
 ```
 /screenshots
@@ -176,65 +176,6 @@ dashboard.png
 
 report.png
 ```
-
----
-
-# 🚀 Getting Started
-
-Clone the repository
-
-```bash
-git clone https://github.com/Ajayrx/peoples-priorities-aiflow.git
-```
-
-Install dependencies
-
-```bash
-npm install
-```
-
-Run locally
-
-```bash
-npm run dev
-```
-
----
-
-# 🔑 Environment Variables
-
-Create a `.env` file.
-
-```env
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_APP_ID=
-VITE_GEMINI_API_KEY=
-```
-
----
-
-# 📍 Roadmap
-
-- Citizen authentication
-- Offline reporting
-- Duplicate report detection
-- AI confidence scoring
-- MP analytics dashboard
-- State-wide deployment
-- National scalability
-
----
-
-# 🌍 Future Scope
-
-- Smart fund allocation recommendations
-- Predictive development analytics
-- Government scheme integration
-- Panchayat & Municipality support
-- AI-assisted infrastructure planning
 
 ---
 
@@ -256,12 +197,6 @@ https://people-s-priorities-git-main-ajayrxs-projects.vercel.app/
 **GitHub**
 
 https://github.com/Ajayrx/peoples-priorities-aiflow
-
----
-
-# 📜 License
-
-MIT License
 
 ---
 
