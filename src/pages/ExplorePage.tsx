@@ -27,6 +27,7 @@ import {
 import type { Hotspot, Region } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
+import { useLanguage } from '../context/LanguageContext';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
 function MapViewController({ center, zoom }: { center: [number, number]; zoom: number }) {
@@ -119,6 +120,7 @@ interface ExplorePageProps {
 }
 
 export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) => {
+  const { t } = useLanguage();
   // Active filter category ('ALL' or specific CategoryType)
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   
@@ -162,15 +164,21 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   }, [reports, hotspots]);
 
   // Filter and sort hotspots (from canonical store / cluster engine)
+  // Filter and sort hotspots (from canonical store / cluster engine)
   const filteredHotspots = useMemo(() => {
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const distName = region.district.replace(' District', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
+
     return engineClusters.filter((hs) => {
-      const matchesRegion =
-        region.isAllIndia || region.state === 'All India'
-          ? true
-          : hs.name.toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
-            hs.location.blockOrTown.toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
-            hs.location.blockOrTown.toLowerCase().includes(region.state.toLowerCase()) ||
-            (region.constituency.includes('Koraput') && hs.name.includes('Semiliguda'));
+      const matchesRegion = isAll
+        ? true
+        : hs.name.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(distName) ||
+          ((hs.location as any).district && (hs.location as any).district.toLowerCase().includes(distName)) ||
+          ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
+          (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
 
       const matchesCategory = selectedCategory === 'ALL' || hs.category === selectedCategory;
       const matchesSearch =
@@ -183,13 +191,18 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
   // Filter and sort individual verified citizen reports (from canonical store)
   const filteredReports = useMemo(() => {
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const distName = region.district.replace(' District', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
+
     return reports.filter((rep) => {
-      const matchesRegion =
-        region.isAllIndia || region.state === 'All India'
-          ? true
-          : (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
-            (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(region.state.toLowerCase()) ||
-            (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').includes('Semiliguda'));
+      const matchesRegion = isAll
+        ? true
+        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
+          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
 
       const matchesCategory = selectedCategory === 'ALL' || rep.category === selectedCategory;
       const matchesSearch =
@@ -211,12 +224,12 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
   // Categories list for quick filtering pills
   const categories: { id: string; label: string; count?: number }[] = [
-    { id: 'ALL', label: activeListTab === 'CLUSTERS' ? 'All Clusters' : 'All Complaints', count: activeListTab === 'CLUSTERS' ? filteredHotspots.length : filteredReports.length },
-    { id: 'Road', label: 'Roads & Bridges' },
-    { id: 'Drainage', label: 'Urban Drainage' },
-    { id: 'Healthcare', label: 'Healthcare' },
-    { id: 'Water', label: 'Drinking Water' },
-    { id: 'Schools', label: 'Schools' },
+    { id: 'ALL', label: activeListTab === 'CLUSTERS' ? t('cat.all_clusters') : t('cat.all_complaints'), count: activeListTab === 'CLUSTERS' ? filteredHotspots.length : filteredReports.length },
+    { id: 'Road', label: t('cat.road') },
+    { id: 'Drainage', label: t('cat.drainage') },
+    { id: 'Healthcare', label: t('cat.healthcare') },
+    { id: 'Water', label: t('cat.water') },
+    { id: 'Schools', label: t('cat.schools') },
   ];
 
   // Map center coordinates based on active hotspot or constituency coordinates
@@ -287,11 +300,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-mono font-bold text-slate-600">
-                ACTIVE CANVAS: <strong className="text-slate-900">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
+                {t('explore.canvas')}: <strong className="text-slate-900">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
-              <span>Interactive Cartographic Canvas & AI Cluster Inspection</span>
+              <span>{t('explore.title')}</span>
             </h1>
           </div>
 
@@ -301,7 +314,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shadow-teal-600/20 active:scale-95"
             >
               <Activity className="w-4 h-4" />
-              <span>Submit Citizen Report</span>
+              <span>{t('explore.switchReport')}</span>
             </button>
           </div>
         </div>
@@ -420,10 +433,10 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       ? 'bg-emerald-50 text-emerald-900 border-emerald-300 font-extrabold'
                       : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                   }`}
-                  title="Toggle Government Schools, Hospitals & Tanks"
+                  title={t('explore.layer.title.infra')}
                 >
                   <span className={`w-2 h-2 rounded-full ${showInfrastructure ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span>Public Infra</span>
+                  <span>{t('explore.layer.infra')}</span>
                 </button>
 
                 <button
@@ -433,10 +446,10 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       ? 'bg-teal-50 text-teal-900 border-teal-300 font-extrabold'
                       : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                   }`}
-                  title="Toggle Individual Verified Citizen Inputs"
+                  title={t('explore.layer.title.citizen')}
                 >
                   <span className={`w-2 h-2 rounded-full ${showCitizenReports ? 'bg-teal-500' : 'bg-slate-300'}`} />
-                  <span>Citizen Inputs ({filteredReports.length})</span>
+                  <span>{t('explore.layer.citizen')} ({filteredReports.length})</span>
                 </button>
 
                 <button
@@ -446,10 +459,10 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       ? 'bg-purple-50 text-purple-900 border-purple-300 font-extrabold'
                       : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                   }`}
-                  title="Toggle Census 2026 Density Heatmap Simulation"
+                  title={t('explore.layer.title.demographics')}
                 >
                   <span className={`w-2 h-2 rounded-full ${showDemographicHeat ? 'bg-purple-500' : 'bg-slate-300'}`} />
-                  <span>Demographics</span>
+                  <span>{t('explore.layer.demographics')}</span>
                 </button>
 
                 <div className="h-4 w-px bg-slate-300 hidden sm:block mx-1" />
@@ -462,7 +475,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       mapStyle === 'streets' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🗺️ Streets
+                    {t('explore.layer.streets')}
                   </button>
                   <button
                     onClick={() => setMapStyle('satellite')}
@@ -470,7 +483,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       mapStyle === 'satellite' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🛰️ Satellite
+                    {t('explore.layer.satellite')}
                   </button>
                   <button
                     onClick={() => setMapStyle('hybrid')}
@@ -478,7 +491,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       mapStyle === 'hybrid' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    🌐 Hybrid
+                    🌐 {t('nav.home') === 'Home' ? 'Hybrid' : t('nav.home') === 'होम' ? 'हाइब्रिड' : t('nav.home') === 'ହୋମ' ? 'ହାଇବ୍ରିଡ୍' : 'హైబ్రిడ్'}
                   </button>
                 </div>
               </div>
@@ -768,8 +781,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
           <div className="lg:col-span-5 bg-white rounded-[28px] border border-slate-200/90 shadow-xl p-4 sm:p-6 flex flex-col h-[600px] sm:h-[680px]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
               <div>
-                <h3 className="font-extrabold text-base sm:text-lg text-slate-900">Spatial Demand Ledger</h3>
-                <p className="text-xs text-slate-500 font-medium">Synced with Dashboard • 100% Canonical Data</p>
+                <h3 className="font-extrabold text-base sm:text-lg text-slate-900">{t('explore.spatialLedger')}</h3>
+                <p className="text-xs text-slate-500 font-medium">{t('explore.synced')}</p>
               </div>
               <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                 <button
@@ -780,7 +793,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Clusters ({filteredHotspots.length})
+                  {t('explore.clusters')} ({filteredHotspots.length})
                 </button>
                 <button
                   onClick={() => setActiveListTab('REPORTS')}
@@ -790,7 +803,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Complaints ({filteredReports.length})
+                  {t('explore.complaints')} ({filteredReports.length})
                 </button>
               </div>
             </div>
@@ -799,7 +812,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             <div className="mb-3 relative">
               <input
                 type="text"
-                placeholder={activeListTab === 'CLUSTERS' ? 'Search cluster, block, category...' : 'Search complaint text, voice quote, issue...'}
+                placeholder={activeListTab === 'CLUSTERS' ? t('explore.searchPlaceholderClusters') : t('explore.searchPlaceholderReports')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 font-medium"
@@ -1041,13 +1054,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             {/* 7-Tab Navigation Bar inside Drawer */}
             <div className="bg-slate-100 border-b border-slate-200 px-4 sm:px-6 flex items-center gap-1.5 overflow-x-auto select-none pt-2">
               {[
-                { id: 1, label: '1. AI Overview', icon: Sparkles },
-                { id: 2, label: '2. 8-Factor Formula', icon: BarChart3 },
-                { id: 3, label: '3. Citizen Voices', icon: Users },
-                { id: 4, label: '4. Census & Demographics', icon: Building2 },
-                { id: 5, label: '5. Fraud Defense', icon: ShieldCheck },
-                { id: 6, label: '6. What-If Simulator', icon: Sliders },
-                { id: 7, label: '7. Before/After Audit', icon: Eye },
+                { id: 1, label: t('explore.tab1'), icon: Sparkles },
+                { id: 2, label: t('explore.tab2'), icon: BarChart3 },
+                { id: 3, label: t('explore.tab3'), icon: Users },
+                { id: 4, label: t('explore.tab4'), icon: Building2 },
+                { id: 5, label: t('explore.tab5'), icon: ShieldCheck },
+                { id: 6, label: t('explore.tab6'), icon: Sliders },
+                { id: 7, label: t('explore.tab7'), icon: Eye },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1085,33 +1098,33 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                           Gemini 3.1 Pro Spatial Synthesis
                         </div>
                         <h4 className="font-extrabold text-base sm:text-lg">
-                          High-Confidence Cluster Verified
+                          {t('explore.drawer.confidence')}
                         </h4>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-xs font-mono text-teal-100">Recommended Action</div>
-                      <div className="font-mono font-black text-lg">Issue Fast-Track Mandate</div>
+                      <div className="text-xs font-mono text-teal-100">{t('explore.drawer.recAction')}</div>
+                      <div className="font-mono font-black text-lg">{t('explore.drawer.mandate')}</div>
                     </div>
                   </div>
 
                   {/* Headline & Reasoning Box */}
                   <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm space-y-4">
                     <div>
-                      <span className="text-[11px] font-mono font-bold text-teal-700 uppercase">AI Executive Headline</span>
+                      <span className="text-[11px] font-mono font-bold text-teal-700 uppercase">{t('explore.drawer.aiHeadline')}</span>
                       <h3 className="text-lg font-extrabold text-slate-900 mt-1">
                         {activeHotspot.aiSynthesis.headline}
                       </h3>
                     </div>
                     <div className="border-t border-slate-100 pt-3">
-                      <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">Geospatial & Citizen Reasoning</span>
+                      <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">{t('explore.drawer.reasoning')}</span>
                       <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-medium mt-1">
                         {activeHotspot.aiSynthesis.reasoning}
                       </p>
                     </div>
                     <div className="border-t border-slate-100 pt-3 bg-teal-50/50 p-3.5 rounded-xl border border-teal-200/80">
                       <span className="text-[11px] font-mono font-bold text-teal-800 uppercase flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-teal-600" /> Recommended Action
+                        <CheckCircle2 className="w-4 h-4 text-teal-600" /> {t('explore.drawer.recAction')}
                       </span>
                       <p className="text-xs sm:text-sm font-extrabold text-teal-950 mt-1">
                         {activeHotspot.aiSynthesis.recommendedAction}
@@ -1123,17 +1136,17 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
                       <div className="text-2xl font-mono font-black text-slate-900">{activeHotspot.metrics.citizenReportCount}</div>
-                      <div className="text-xs font-bold text-slate-500 mt-0.5">Verified Citizen Reports</div>
+                      <div className="text-xs font-bold text-slate-500 mt-0.5">{t('explore.drawer.verifiedReports')}</div>
                       <div className="text-[10px] font-mono text-emerald-600 font-bold mt-1">{activeHotspot.metrics.reportGrowthVelocity}</div>
                     </div>
                     <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
                       <div className="text-2xl font-mono font-black text-teal-700">{activeHotspot.metrics.impactedPopulation.toLocaleString()}</div>
-                      <div className="text-xs font-bold text-slate-500 mt-0.5">Impacted Citizens</div>
-                      <div className="text-[10px] font-mono text-slate-400 mt-1">Census 2021/2026 Sync</div>
+                      <div className="text-xs font-bold text-slate-500 mt-0.5">{t('explore.drawer.impactedCitizens')}</div>
+                      <div className="text-[10px] font-mono text-slate-400 mt-1">{t('explore.drawer.censusSync')}</div>
                     </div>
                     <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs col-span-2 sm:col-span-1">
                       <div className="text-2xl font-mono font-black text-amber-600">{activeHotspot.metrics.infrastructureStatus}</div>
-                      <div className="text-xs font-bold text-slate-500 mt-0.5">Infra Severity Rating</div>
+                      <div className="text-xs font-bold text-slate-500 mt-0.5">{t('explore.drawer.severityRating')}</div>
                       <div className="text-[10px] font-mono text-slate-400 mt-1">3 Schools / 0 PHC Nearby</div>
                     </div>
                   </div>
@@ -1202,7 +1215,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       onClick={() => onNavigate('report')}
                       className="text-xs font-bold text-teal-700 hover:underline flex items-center gap-1"
                     >
-                      <span>Submit New Intake →</span>
+                      <span>Raise a Complaint →</span>
                     </button>
                   </div>
 

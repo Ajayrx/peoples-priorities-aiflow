@@ -15,6 +15,7 @@ import {
 import type { Region } from '../types';
 import { MOCK_DATASET_HEALTH } from '../data/mockData';
 import { useCitizenStore } from '../context/CitizenStoreContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ManagementPageProps {
   region: Region;
@@ -22,6 +23,7 @@ interface ManagementPageProps {
 }
 
 export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNavigate }) => {
+  const { t } = useLanguage();
   const isDemoRegion = region.constituency.includes('Koraput');
 
   const { reports } = useCitizenStore();
@@ -80,11 +82,11 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-mono font-bold text-slate-600">
-                PIPELINE STATUS: <strong className="text-emerald-700">🟢 5 Datasets Online & Synchronized</strong>
+                {t('admin.pipelineStatus')}: <strong className="text-emerald-700">{t('admin.onlineSync')}</strong>
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
-              <span>Dataset Health & Backend Recalibration Engine</span>
+              <span>{t('admin.title')}</span>
             </h1>
           </div>
 
@@ -93,7 +95,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               onClick={() => onNavigate('dashboard')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm transition-all shadow-sm active:scale-95"
             >
-              <span>Back to MP Dashboard</span>
+              <span>{t('admin.backToDashboard')}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -154,7 +156,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900 flex items-center gap-2">
                   <Database className="w-5 h-5 text-teal-600" />
-                  <span>Verified Government & Municipal Datasets</span>
+                  <span>{t('admin.verifiedDatasets')}</span>
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">Automated schema validation and GIS spatial index integrity</p>
               </div>
@@ -222,7 +224,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
                 className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-teal-400 bg-slate-50/50 hover:bg-teal-50/30 text-slate-700 hover:text-teal-900 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
                 <Upload className="w-4 h-4 text-teal-600" />
-                <span>Upload New GIS Vector or Census GeoJSON File to Pipeline</span>
+                <span>{t('admin.uploadBtn')}</span>
               </button>
             </div>
           </div>
@@ -235,7 +237,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="font-extrabold text-lg text-slate-900 flex items-center gap-2">
                   <Terminal className="w-5 h-5 text-amber-600" />
-                  <span>DBSCAN & Multi-Factor Recalibration</span>
+                  <span>{t('admin.dbscanTitle')}</span>
                 </h3>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
                   Triggers full backend re-clustering across all {totalGeoRecords.toLocaleString()} records and recalculates formula weights
@@ -293,7 +295,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
                 }`}
               >
                 <RefreshCw className={`w-4 h-4 ${isRecalibrating ? 'animate-spin' : ''}`} />
-                <span>{isRecalibrating ? 'Recalibrating Spatial Clusters...' : 'Trigger Full Backend Recalibration Now'}</span>
+                <span>{isRecalibrating ? (t('nav.home') === 'Home' ? 'Recalibrating Spatial Clusters...' : t('nav.home') === 'होम' ? 'स्थानिक समूहों का पुनर्गठन...' : t('nav.home') === 'ହୋମ' ? 'ସ୍ଥାନୀୟ କ୍ଲଷ୍ଟର୍ ପୁନର୍ଗଠନ ଚାଲିଛି...' : 'ప్రాంతీయ క్లస్టర్ల పునర్వ్యవస్థీకరణ...') : t('admin.triggerBtn')}</span>
               </button>
             </div>
 
@@ -302,7 +304,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
                 <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
                   <History className="w-5 h-5 text-teal-600" />
-                  <span>Spatial Snapshot Rollback</span>
+                  <span>{t('admin.snapshotRollback')}</span>
                 </h3>
               </div>
 

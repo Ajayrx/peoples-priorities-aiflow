@@ -9,7 +9,7 @@ export const FloatingBottomDock: React.FC<FloatingBottomDockProps> = ({ currentT
   const navItems = [
     { id: 'landing', label: 'Home', icon: Home },
     { id: 'explore', label: 'Explore Map', icon: MapPin },
-    { id: 'report', label: 'Report Intake', icon: Send },
+    { id: 'report', label: 'Raise a Complaint', icon: Send },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'management', label: 'Admin & Health', icon: Database },
   ];

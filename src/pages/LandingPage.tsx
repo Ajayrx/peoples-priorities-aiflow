@@ -12,6 +12,7 @@ import {
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
 import type { Hotspot, Region } from '../types';
+import { useLanguage } from '../context/LanguageContext';
 
 interface LandingPageProps {
   onNavigate: (tab: string) => void;
@@ -20,6 +21,7 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, onResetToDemoRegion: _onResetToDemoRegion }) => {
+  const { t } = useLanguage();
   const { hotspots: storeHotspots, reports } = useCitizenStore();
   const displayHotspots = storeHotspots;
   const [activeHeroHotspot, setActiveHeroHotspot] = useState<Hotspot | null>(displayHotspots[0] || null);
@@ -91,30 +93,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
           <div className="lg:col-span-6 space-y-5 sm:space-y-6 text-left">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200/80 text-slate-700 text-xs font-bold tracking-wider shadow-xs">
               <Activity className="w-3.5 h-3.5 text-teal-600 animate-pulse shrink-0" />
-              <span>Active Target: {region.state} → {region.constituency.replace(' (Demo Region)', '')}</span>
+              <span>{t('landing.activeTarget')}: {region.state} → {region.constituency.replace(' (Demo Region)', '')}</span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.08]">
-              Evidence-Based <br />
+              {t('landing.hero1')} <br />
               <span className="bg-gradient-to-r from-teal-700 via-emerald-600 to-teal-800 bg-clip-text text-transparent">
-                Constituency Planning.
+                {t('landing.hero2')}
               </span>
             </h1>
 
             <p className="text-sm sm:text-lg text-slate-600 leading-relaxed max-w-xl font-medium">
-              <strong>People's Priorities™</strong> converts real citizen photos, audio voice notes, and text reports into structured, mathematically proven development intelligence.
+              {t('landing.subtitle')}
             </p>
 
-            {/* Region Status Banner */}
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 space-y-2 shadow-sm">
-              <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs sm:text-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Nationwide Density & Proximity Cluster Engine Active ({region.constituency})</span>
-              </div>
-              <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                Every citizen report submitted anywhere across India immediately appears as a live 🟣 individual marker or forms a hierarchical cluster ({clusters.length} clusters • {individualReports.length} individual markers monitored live).
-              </p>
-            </div>
 
             {/* Core Action CTAs */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 pt-2">
@@ -123,7 +115,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 className="group flex items-center justify-center gap-3 px-6 sm:px-7 py-3.5 sm:py-4 rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold text-sm sm:text-base shadow-xl shadow-teal-600/25 hover:scale-105 transition-all duration-200"
               >
                 <MapPin className="w-5 h-5 text-teal-100 group-hover:animate-bounce" />
-                Launch Interactive Map
+                {t('landing.cta.explore')}
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
 
@@ -132,7 +124,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 className="flex items-center justify-center gap-2.5 px-6 py-3.5 sm:py-4 rounded-full bg-white border border-slate-300 text-slate-800 font-bold text-sm sm:text-base hover:bg-slate-50 hover:border-teal-600 transition-all duration-200 shadow-sm"
               >
                 <Mic className="w-5 h-5 text-teal-600" />
-                Submit Citizen Report
+                {t('landing.cta.report')}
               </button>
             </div>
 
@@ -148,11 +140,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 <div className="flex items-center gap-2.5">
                   <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
                   <span className="text-xs font-mono font-bold text-slate-800 uppercase tracking-wider">
-                    HERO RADAR — {region.constituency.replace(' (Demo Region)', '')}
+                    {t('landing.heroRadar')} — {region.constituency.replace(' (Demo Region)', '')}
                   </span>
                 </div>
                 <span className="text-[10px] sm:text-xs px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200 font-mono font-bold shrink-0">
-                  {clusters.length} Clusters • {individualReports.length} 🟣 Pins Active
+                  {clusters.length} {t('landing.clusters')} • {individualReports.length} {t('landing.pinsActive')}
                 </span>
               </div>
 
@@ -187,7 +179,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                             hs.priorityLevel === 'HIGH' ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' :
                             'bg-teal-50 text-teal-800 border border-teal-300'
                           }`}>
-                            Score: {hs.priorityScore}
+                            {t('landing.score')} {hs.priorityScore}
                           </span>
                           {hs.priorityLevel === 'CRITICAL' && (
                             <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
@@ -197,7 +189,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                           {hs.location.blockOrTown}
                         </div>
                         <div className="text-[10px] sm:text-[11px] text-slate-500 truncate mt-0.5 font-medium">
-                          {hs.category} • {hs.metrics?.citizenReportCount || hs.recentReports?.length || 1} Reports
+                          {t(`cat.${hs.category.toLowerCase()}`)} • {hs.metrics?.citizenReportCount || hs.recentReports?.length || 1} {t('landing.reports')}
                         </div>
                       </button>
                     );
@@ -210,24 +202,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                     >
                       <div className="flex items-center justify-between gap-1 mb-1.5">
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-extrabold bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1">
-                          🟣 Individual Pin
+                          {t('landing.individualPin')}
                         </span>
                       </div>
                       <div className="font-extrabold text-xs sm:text-sm text-purple-950 truncate">
                         {rep.detectedIssue || rep.title || rep.location.blockOrTown}
                       </div>
                       <div className="text-[10px] sm:text-[11px] text-purple-700 truncate mt-0.5 font-medium">
-                        {rep.category} • Monitored Demand
+                        {t(`cat.${rep.category.toLowerCase()}`)} • {t('landing.monitoredDemand')}
                       </div>
                     </div>
                   ))}
                   {displayHotspots.length === 0 && individualReports.length === 0 && (
                     <div className="col-span-1 sm:col-span-3 p-6 rounded-2xl bg-white/90 border border-slate-200 text-center space-y-2">
                       <div className="text-sm font-extrabold text-slate-800">
-                        No active clusters in {region.constituency.replace(' (Demo Region)', '')} yet
+                        {t('landing.noClusters')} {region.constituency.replace(' (Demo Region)', '')} yet
                       </div>
                       <p className="text-xs text-slate-600 font-medium">
-                        The real-time GIS spatial canvas is live across {region.constituency.replace(' (Demo Region)', '')}. Submit a verified citizen report to initiate DBSCAN clustering!
+                        {t('landing.noClustersDesc')}
                       </p>
                     </div>
                   )}
@@ -263,7 +255,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                         onClick={() => onNavigate('explore')}
                         className="text-teal-700 hover:text-teal-900 hover:underline font-sans font-bold flex items-center gap-1 ml-auto"
                       >
-                        Deep Analysis →
+                        {t('landing.deepAnalysis')}
                       </button>
                     </div>
                   </div>
@@ -279,10 +271,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
         <div className="max-w-7xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">
-              How People's Priorities™ Works
+              {t('landing.howitworks')}
             </h2>
             <p className="text-slate-600 text-sm sm:text-base leading-relaxed font-medium">
-              Strict separation between <strong>Gemini 3.1 Pro Multi-Modal AI</strong> (transcription, image inspection, summarization) and <strong>Deterministic Backend Services</strong> (geospatial clustering, multi-factor scoring formula).
+              {t('landing.howitworks.desc')}
             </p>
           </div>
 
@@ -295,12 +287,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
               <div className="absolute top-6 right-6 text-3xl font-mono font-extrabold text-slate-300 group-hover:text-teal-600/30 transition-colors">
                 01
               </div>
-              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">Multi-Modal Ingestion</h3>
+              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">{t('landing.step1.title')}</h3>
               <p className="text-xs sm:text-sm text-slate-600 mb-5 leading-relaxed font-medium">
-                Citizens submit local needs via Odia/Hindi voice notes, geotagged infrastructure photos, or simple text. Gemini transcribes, extracts exact entities, and calculates confidence (`0-100%`).
+                {t('landing.step1.desc')}
               </p>
               <div className="inline-flex items-center gap-2 text-xs font-mono text-teal-800 bg-teal-50 px-3.5 py-1.5 rounded-full border border-teal-200 font-bold">
-                <ShieldCheck className="w-4 h-4 shrink-0 text-teal-600" /> 4-Layer Fraud Defense
+                <ShieldCheck className="w-4 h-4 shrink-0 text-teal-600" /> {t('landing.step1.badge')}
               </div>
             </div>
 
@@ -312,9 +304,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
               <div className="absolute top-6 right-6 text-3xl font-mono font-extrabold text-slate-300 group-hover:text-emerald-600/30 transition-colors">
                 02
               </div>
-              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">Multi-Factor Scoring Engine</h3>
+              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">{t('landing.step2.title')}</h3>
               <p className="text-xs sm:text-sm text-slate-600 mb-5 leading-relaxed font-medium">
-                Backend services cluster points spatially using DBSCAN / H3 Grids and cross-reference Census 2021/2026 data + existing MP LAD fund proposals to calculate the multiplicative score.
+                {t('landing.step2.desc')}
               </p>
               <div className="inline-flex text-xs font-mono text-emerald-800 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 font-bold overflow-x-auto">
                 Score = D × S × P × G × U × C × R × Φ
@@ -329,12 +321,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
               <div className="absolute top-6 right-6 text-3xl font-mono font-extrabold text-slate-300 group-hover:text-amber-500/30 transition-colors">
                 03
               </div>
-              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">MP Decision & Simulator</h3>
+              <h3 className="text-xl font-extrabold text-slate-900 mb-2.5">{t('landing.step3.title')}</h3>
               <p className="text-xs sm:text-sm text-slate-600 mb-5 leading-relaxed font-medium">
-                Decision makers view the exact priority ranking table, inspect explainable breakdowns (`Why 94?`), and run real-time <strong>"What-If" simulation allocations</strong> before sanctioning funds.
+                {t('landing.step3.desc')}
               </p>
               <div className="inline-flex items-center gap-2 text-xs font-mono text-amber-900 bg-amber-50 px-3.5 py-1.5 rounded-full border border-amber-200 font-bold">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-amber-600" /> 15-Sec Actionable Clarity
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-amber-600" /> {t('landing.step3.badge')}
               </div>
             </div>
           </div>
@@ -344,22 +336,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
       {/* Footer CTA — Cream / White Theme */}
       <footer className="py-14 px-4 text-center max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center space-y-5">
-          <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Ready to Explore {displayConstituencyTitle}?</h3>
+          <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900">{t('landing.footer.title')} {displayConstituencyTitle}?</h3>
           <p className="text-slate-600 text-sm max-w-md font-medium">
-            Experience the 65% cartographic viewport, deep evidence tabs, and real-time civic intelligence.
+            {t('landing.footer.desc')}
           </p>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 pt-2 w-full sm:w-auto max-w-xs sm:max-w-none mx-auto">
             <button
               onClick={() => onNavigate('explore')}
               className="px-8 py-3.5 rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-extrabold transition-colors shadow-xl shadow-teal-600/20 text-sm"
             >
-              Open Map Viewport →
+              {t('landing.footer.btn1')}
             </button>
             <button
               onClick={() => onNavigate('dashboard')}
               className="px-8 py-3.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-bold transition-colors shadow-md text-sm"
             >
-              Open MP Decision Matrix
+              {t('landing.footer.btn2')}
             </button>
           </div>
         </div>

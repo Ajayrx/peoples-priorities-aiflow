@@ -45,6 +45,7 @@ export interface CitizenReport {
   aiPriority?: string;
   aiConfidence?: number;
   hotspotId?: string;
+  clientSubmissionId?: string;
 
   // Backwards-compatible canonical mappings for UI components
   timestamp: string;

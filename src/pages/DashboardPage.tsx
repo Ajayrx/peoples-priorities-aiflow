@@ -12,6 +12,7 @@ import {
 import type { Region, UserRole } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
+import { useLanguage } from '../context/LanguageContext';
 
 interface DashboardPageProps {
   region: Region;
@@ -19,6 +20,7 @@ interface DashboardPageProps {
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate }) => {
+  const { t } = useLanguage();
   // Active User Role Viewport Switcher
   const [activeRole, setActiveRole] = useState<UserRole>('MP');
 
@@ -40,6 +42,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
 
   // Recalculate priority scores dynamically based on slider weights across nationwide clusters
   const dynamicHotspots = useMemo(() => {
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const distName = region.district.replace(' District', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
+
     return engineClusters.map((hs) => {
       // Base score adjusted by our user slider multipliers vs defaults
       const baseD = hs.priorityBreakdown?.demandVelocityMultiplier || 1.2;
@@ -60,15 +66,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
         dynamicScore,
       };
     }).filter((hs) => {
+      const matchesRegion = isAll
+        ? true
+        : hs.name.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(distName) ||
+          ((hs.location as any).district && (hs.location as any).district.toLowerCase().includes(distName)) ||
+          ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
+          (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
+
+      if (!matchesRegion) return false;
       if (categoryFilter === 'ALL') return true;
       return hs.category === categoryFilter;
     }).sort((a, b) => b.dynamicScore - a.dynamicScore);
-  }, [demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter, engineClusters]);
+  }, [demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter, engineClusters, region]);
 
-  // All verified citizen submissions across the entire system (canonical unified store)
+  // All verified citizen submissions across the entire system (canonical unified store) filtered by region
   const allCanonicalReports = useMemo(() => {
-    return reports;
-  }, [reports]);
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const distName = region.district.replace(' District', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
+
+    return reports.filter((rep) => {
+      return isAll
+        ? true
+        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
+          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+    });
+  }, [reports, region]);
 
   const displayedPriorityReports = useMemo(() => {
     if (categoryFilter === 'ALL') return allCanonicalReports;
@@ -86,13 +114,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
     return { critical, high, medium };
   }, [dynamicHotspots]);
 
-  const rolesList: { id: UserRole; label: string; icon: string; desc: string }[] = [
-    { id: 'MP', label: 'Member of Parliament (MP)', icon: '🏛️', desc: 'High-Demand Category Priority comparison & Action Mandate issuance' },
-    { id: 'DISTRICT_OFFICER', label: 'District Collectorate / Officer', icon: '🧑‍💼', desc: 'Technical engineering verification & field deployment queue' },
-    { id: 'CITIZEN', label: 'Citizen Transparency Portal', icon: '🧑‍🤝‍🧑', desc: 'Public demand ranking tracking & community satisfaction voting' },
-    { id: 'VOLUNTEER', label: 'Field Verifier / Volunteer', icon: '🙋', desc: 'Mobile GPS field check queue & before/after ground-truth logs' },
-    { id: 'ADMIN', label: 'System Administrator', icon: '⚙️', desc: 'GIS pipeline clustering & AI verification threshold settings' },
-  ];
+  const rolesList: { id: UserRole; label: string; icon: string; desc: string }[] = useMemo(() => [
+    { id: 'MP', label: t('dashboard.role.mp'), icon: '🏛️', desc: t('dashboard.roleDesc') },
+    { id: 'DISTRICT_OFFICER', label: t('dashboard.role.collector'), icon: '🧑‍💼', desc: t('dashboard.roleDesc') },
+    { id: 'CITIZEN', label: t('nav.home') === 'Home' ? 'Citizen Transparency Portal' : t('nav.home') === 'होम' ? 'नागरिक पारदर्शिता पोर्टल' : t('nav.home') === 'ହୋମ' ? 'ନାଗରିକ ସ୍ୱଚ୍ଛତା ପୋର୍ଟାଲ' : 'పౌర పారదర్శకత పోర్టల్', icon: '🧑‍🤝‍🧑', desc: t('dashboard.roleDesc') },
+    { id: 'VOLUNTEER', label: t('nav.home') === 'Home' ? 'Field Verifier / Volunteer' : t('nav.home') === 'होम' ? 'क्षेत्र सत्यापनकर्ता / स्वयंसेवक' : t('nav.home') === 'ହୋମ' ? 'କ୍ଷେତ୍ର ଯାଞ୍ਚକାରୀ / ସ୍ୱେଚ୍ଛାସेବୀ' : 'ఫీల్డ్ వెరిఫైయర్ / వాలంటీర్', icon: '🙋', desc: t('dashboard.roleDesc') },
+    { id: 'ADMIN', label: t('nav.admin'), icon: '⚙️', desc: t('dashboard.roleDesc') },
+  ], [t]);
 
   return (
     <div className="min-h-screen bg-[#FAFAFB] text-slate-900 pb-16 min-w-0">
@@ -103,11 +131,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 min-w-0 flex-wrap">
               <span className="text-xs font-mono font-bold text-slate-600 break-words min-w-0">
-                ACTIVE CANVAS: <strong className="text-slate-900 break-words">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
+                {t('explore.canvas')}: <strong className="text-slate-900 break-words">{region.state} → {region.constituency.replace(' (Demo Region)', '')}</strong>
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2 break-words min-w-0">
-              <span className="break-words min-w-0 leading-tight">MP High-Demand Category Priority Dashboard & Resolution Simulator</span>
+              <span className="break-words min-w-0 leading-tight">{t('dashboard.title')}</span>
             </h1>
           </div>
 
@@ -116,7 +144,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
               onClick={() => onNavigate('explore')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shadow-teal-600/20 active:scale-95"
             >
-              <span>Switch to GIS Map</span>
+              <span>{t('dashboard.switchmap')}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -129,7 +157,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
         {/* Role Switcher Pills Strip */}
         <div className="bg-white rounded-[24px] border border-slate-200/90 p-3 sm:p-4 shadow-md overflow-x-auto min-w-0">
           <div className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider mb-2.5 px-1 min-w-0">
-            Active Viewport Lens (Role-Based Access Control):
+            {t('dashboard.role.title')}
           </div>
           <div className="flex items-center gap-2 min-w-max pb-1">
             {rolesList.map((role) => {
@@ -161,17 +189,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
               <UserCheck className="w-8 h-8" />
             </div>
             <h3 className="text-xl sm:text-2xl font-black text-slate-900">
-              Viewport Mode active for: {rolesList.find(r => r.id === activeRole)?.label}
+              {t('dashboard.viewportActiveFor')} {rolesList.find(r => r.id === activeRole)?.label}
             </h3>
             <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto font-medium leading-relaxed">
-              {rolesList.find(r => r.id === activeRole)?.desc}. All actions in this view are read-only or scoped to field verification checklists and citizen feedback voting.
+              {t('dashboard.roleDesc')}
             </p>
             <div className="pt-2 flex justify-center gap-3">
               <button
                 onClick={() => setActiveRole('MP')}
                 className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md shadow-teal-600/20"
               >
-                Return to MP Demand Priority Engine
+                {t('dashboard.returnToMp')}
               </button>
             </div>
           </div>
@@ -184,7 +212,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                 <div className="flex items-center justify-between gap-2 min-w-0 flex-wrap">
                   <h3 className="font-extrabold text-base sm:text-lg text-slate-900 flex items-center gap-2 min-w-0">
                     <Sliders className="w-5 h-5 text-teal-600 shrink-0" />
-                    <span className="truncate min-w-0">8-Factor Weight Calibration</span>
+                    <span className="truncate min-w-0">{t('dashboard.weights.title')}</span>
                   </h3>
                   <button
                     onClick={() => {
@@ -195,18 +223,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     }}
                     className="text-xs text-teal-700 font-bold hover:underline flex items-center gap-1 shrink-0"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Reset
+                    <RefreshCw className="w-3.5 h-3.5" /> {t('dashboard.weights.reset')}
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-1 break-words">
-                  Adjust formula multipliers to see how citizen demand volume vs. infrastructure gaps shift rank order.
+                  {t('dashboard.weights.desc')}
                 </p>
               </div>
 
               <div className="space-y-4 sm:space-y-5 min-w-0">
                 <div className="min-w-0">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5 min-w-0 gap-1">
-                    <span className="truncate min-w-0">Citizen Demand Velocity Weight (D)</span>
+                    <span className="truncate min-w-0">{t('dashboard.weights.demand')}</span>
                     <span className="font-mono text-teal-700 font-black shrink-0">{demandWeight.toFixed(1)}x</span>
                   </div>
                   <input
@@ -214,12 +242,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     onChange={(e) => setDemandWeight(Number(e.target.value))}
                     className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
                   />
-                  <span className="text-[10px] font-mono text-slate-400 block truncate">Surge intensity & volume of verified citizen voices</span>
+                  <span className="text-[10px] font-mono text-slate-400 block truncate">
+                    {t('nav.home') === 'Home' ? 'Surge intensity & volume of verified citizen voices' : t('nav.home') === 'होम' ? 'सत्यापित नागरिक आवाजों की तीव्रता और संख्या' : t('nav.home') === 'ହୋମ' ? 'ଯାଞ୍ଚ ହୋଇଥିବା ନାଗରିକ ସ୍ୱରର ତୀବ୍ରତା ଏବଂ ପରିମାଣ' : 'ధృవీకరించబడిన పౌరుల గళాల తీవ్రత మరియు పరిమాణం'}
+                  </span>
                 </div>
 
                 <div className="min-w-0">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5 min-w-0 gap-1">
-                    <span className="truncate min-w-0">Demographic Impact Weight (P)</span>
+                    <span className="truncate min-w-0">{t('dashboard.weights.demographic')}</span>
                     <span className="font-mono text-teal-700 font-black shrink-0">{demographicWeight.toFixed(1)}x</span>
                   </div>
                   <input
@@ -227,12 +257,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     onChange={(e) => setDemographicWeight(Number(e.target.value))}
                     className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
                   />
-                  <span className="text-[10px] font-mono text-slate-400 block truncate">Census 2021/2026 tribal radius population impacted</span>
+                  <span className="text-[10px] font-mono text-slate-400 block truncate">
+                    {t('nav.home') === 'Home' ? 'Census 2021/2026 tribal radius population impacted' : t('nav.home') === 'होम' ? 'जनगणना 2021/2026 जनजातीय त्रिज्या प्रभावित आबादी' : t('nav.home') === 'ହୋମ' ? 'ଜନଗଣନା ୨୦୨୧/୨୦୨୬ ଆଦିବାସୀ ବ୍ୟାସାର୍ଦ୍ଧ ଜନସଂଖ୍ୟା ପ୍ରଭାବିତ' : 'జనాభా గణన 2021/2026 గిరిజన ప్రాంత ప్రభావిత జనాభా'}
+                  </span>
                 </div>
 
                 <div className="min-w-0">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5 min-w-0 gap-1">
-                    <span className="truncate min-w-0">Infrastructure Deficit Weight (S)</span>
+                    <span className="truncate min-w-0">{t('dashboard.weights.infra')}</span>
                     <span className="font-mono text-teal-700 font-black shrink-0">{infraWeight.toFixed(1)}x</span>
                   </div>
                   <input
@@ -240,12 +272,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     onChange={(e) => setInfraWeight(Number(e.target.value))}
                     className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-600"
                   />
-                  <span className="text-[10px] font-mono text-slate-400 block truncate">Absence of schools/hospitals within 6.5 km</span>
+                  <span className="text-[10px] font-mono text-slate-400 block truncate">
+                    {t('nav.home') === 'Home' ? 'Absence of schools/hospitals within 6.5 km' : t('nav.home') === 'होम' ? '6.5 किमी के भीतर स्कूलों/अस्पतालों की अनुपस्थिति' : t('nav.home') === 'ହୋମ' ? '୬.୫ କିଲୋମିଟର ମଧ୍ୟରେ ବିଦ୍ୟାଳୟ/ଡାକ୍ତରଖାନାର ଅନୁପସ୍ଥିତି' : '6.5 కిలోమీటర్ల పరిధిలో పాఠశాలలు/ఆసుపత్రుల లేమి'}
+                  </span>
                 </div>
 
                 <div className="min-w-0">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5 min-w-0 gap-1">
-                    <span className="truncate min-w-0">Seasonal Monsoon Urgency (U)</span>
+                    <span className="truncate min-w-0">{t('dashboard.weights.urgency')}</span>
                     <span className="font-mono text-amber-600 font-black shrink-0">{urgencyWeight.toFixed(1)}x</span>
                   </div>
                   <input
@@ -253,7 +287,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     onChange={(e) => setUrgencyWeight(Number(e.target.value))}
                     className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
-                  <span className="text-[10px] font-mono text-slate-400 block truncate">July-September high rainfall cutoff vulnerability</span>
+                  <span className="text-[10px] font-mono text-slate-400 block truncate">
+                    {t('nav.home') === 'Home' ? 'July-September high rainfall cutoff vulnerability' : t('nav.home') === 'होम' ? 'जुलाई-सितंबर उच्च वर्षा कटऑफ संवेदनशीलता' : t('nav.home') === 'ହୋମ' ? 'ଜୁଲାଇ-ସେପ୍ଟେମ୍ବର ଅଧିକ ବର୍ଷା ଜନିତ ବିପଦ' : 'జూలై-సెప్టెంబర్ భారీ వర్షపాత దుర్బలత్వం'}
+                  </span>
                 </div>
               </div>
 

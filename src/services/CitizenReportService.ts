@@ -65,14 +65,15 @@ class CitizenReportServiceSingleton {
     const intakeMethod: 'VOICE' | 'PHOTO' | 'TEXT' = raw.inputMethod || raw.intakeType || (photoUrl ? 'PHOTO' : 'TEXT');
     const timestampStr = raw.timestamp || (raw.createdAt ? String(raw.createdAt) : 'Just now');
     
-    const location = raw.location || {
-      lat: raw.latitude || 20.5937,
-      lng: raw.longitude || 78.9629,
-      state: raw.state || 'India',
-      district: raw.district || 'Nationwide District',
-      constituency: raw.constituency || 'National PC',
-      blockOrTown: raw.address || 'Verified Civic Locality',
-      villageOrWard: 'Verified Citizen Pin',
+    const rawLoc = raw.location || {};
+    const location = {
+      lat: rawLoc.lat || raw.latitude || 20.5937,
+      lng: rawLoc.lng || raw.longitude || 78.9629,
+      state: rawLoc.state || raw.state || 'India',
+      district: rawLoc.district || raw.district || 'Nationwide District',
+      constituency: rawLoc.constituency || raw.constituency || 'National PC',
+      blockOrTown: rawLoc.blockOrTown || rawLoc.address || raw.address || 'Verified Civic Locality',
+      villageOrWard: rawLoc.villageOrWard || 'Verified Citizen Pin',
     };
 
     const aiSummary = raw.aiSummary || raw.aiProcessing?.aiSummary || description;
@@ -98,6 +99,7 @@ class CitizenReportServiceSingleton {
       aiPriority: raw.aiPriority || priorityLevel,
       aiConfidence: raw.aiConfidence || priorityScore,
       hotspotId: raw.hotspotId || raw.assignedHotspotId,
+      clientSubmissionId: raw.clientSubmissionId || (raw.id && typeof raw.id === 'string' && raw.id.startsWith('rep-') ? raw.id : undefined),
 
       // Canonical mappings for backward compatibility across all UI components
       timestamp: timestampStr,
@@ -150,7 +152,11 @@ class CitizenReportServiceSingleton {
       location: {
         lat: r.location.lat,
         lng: r.location.lng,
+        state: r.location.state,
+        district: r.location.district,
+        constituency: r.location.constituency,
         blockOrTown: r.location.blockOrTown,
+        villageOrWard: r.location.villageOrWard,
       },
       isRealCloudItem: Boolean(r.id.startsWith('live-') || r.id !== 'mock'),
     }));
@@ -431,6 +437,11 @@ class CitizenReportServiceSingleton {
             snapshot.forEach((docSnap) => {
               const data = docSnap.data();
               const normalized = this.normalizeReport({ ...data, id: docSnap.id });
+              if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
+                this.currentReportsMap.delete(normalized.clientSubmissionId);
+              } else if (data.id && typeof data.id === 'string' && data.id.startsWith('rep-') && this.currentReportsMap.has(data.id)) {
+                this.currentReportsMap.delete(data.id);
+              }
               this.currentReportsMap.set(normalized.id, normalized);
             });
             this.notifyAll();
@@ -462,9 +473,18 @@ class CitizenReportServiceSingleton {
 
   private async refreshAndEmit() {
     const indexedDBReports = await getAllReportsFromIndexedDB();
+    const existingSubmissionIds = new Set<string>();
+    for (const r of this.currentReportsMap.values()) {
+      if (r.clientSubmissionId) existingSubmissionIds.add(r.clientSubmissionId);
+    }
+
     for (const item of indexedDBReports) {
       const norm = this.normalizeReport(item);
+      if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
+        continue;
+      }
       this.currentReportsMap.set(norm.id, norm);
+      if (norm.clientSubmissionId) existingSubmissionIds.add(norm.clientSubmissionId);
     }
 
     try {
@@ -472,9 +492,13 @@ class CitizenReportServiceSingleton {
       if (rawLocal) {
         const parsed = JSON.parse(rawLocal);
         for (const item of parsed) {
-          if (!this.currentReportsMap.has(item.id)) {
-            const norm = this.normalizeReport(item);
+          const norm = this.normalizeReport(item);
+          if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
+            continue;
+          }
+          if (!this.currentReportsMap.has(norm.id)) {
             this.currentReportsMap.set(norm.id, norm);
+            if (norm.clientSubmissionId) existingSubmissionIds.add(norm.clientSubmissionId);
           }
         }
       }
