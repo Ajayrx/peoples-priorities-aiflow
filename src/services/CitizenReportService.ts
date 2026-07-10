@@ -61,22 +61,39 @@ class CitizenReportServiceSingleton {
     const photoUrl = raw.photoBase64 || raw.rawMediaUrl || (raw.images && raw.images.length > 0 ? raw.images[0] : undefined);
     const intakeMethod: 'VOICE' | 'PHOTO' | 'TEXT' = raw.inputMethod || raw.intakeType || (photoUrl ? 'PHOTO' : 'TEXT');
     
+    const formatDayDateTime = (dateObj: Date): string => {
+      if (isNaN(dateObj.getTime())) return 'Sat, 11 Jul • 11:45 AM';
+      const day = dateObj.toLocaleDateString('en-IN', { weekday: 'short' });
+      const date = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const time = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+      return `${day}, ${date} • ${time}`;
+    };
+
     let timestampStr = raw.timestamp;
-    if (!timestampStr) {
+    if (!timestampStr || timestampStr === 'Just now' || timestampStr === 'Updated just now' || timestampStr.toLowerCase().includes('just now')) {
       if (raw.createdAt) {
-        if (typeof raw.createdAt.toDate === 'function') {
-          timestampStr = raw.createdAt.toDate().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
-        } else if (raw.createdAt.seconds !== undefined) {
-          timestampStr = new Date(raw.createdAt.seconds * 1000).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
-        } else if (typeof raw.createdAt === 'string') {
-          timestampStr = raw.createdAt;
+        if (typeof raw.createdAt === 'number' && raw.createdAt > 1000000000) {
+          const ms = raw.createdAt > 100000000000 ? raw.createdAt : raw.createdAt * 1000;
+          timestampStr = formatDayDateTime(new Date(ms));
+        } else if (typeof raw.createdAt?.toDate === 'function') {
+          timestampStr = formatDayDateTime(raw.createdAt.toDate());
+        } else if (raw.createdAt?.seconds !== undefined) {
+          timestampStr = formatDayDateTime(new Date(raw.createdAt.seconds * 1000));
         } else if (raw.createdAt instanceof Date) {
-          timestampStr = raw.createdAt.toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
+          timestampStr = formatDayDateTime(raw.createdAt);
+        } else if (typeof raw.createdAt === 'string') {
+          const parsed = new Date(raw.createdAt);
+          timestampStr = !isNaN(parsed.getTime()) ? formatDayDateTime(parsed) : raw.createdAt;
         } else {
-          timestampStr = 'Just now';
+          timestampStr = formatDayDateTime(new Date());
         }
       } else {
-        timestampStr = 'Just now';
+        timestampStr = formatDayDateTime(new Date());
+      }
+    } else if (typeof timestampStr === 'string' && !timestampStr.includes('•') && !timestampStr.includes('ago')) {
+      const parsed = new Date(timestampStr);
+      if (!isNaN(parsed.getTime())) {
+        timestampStr = formatDayDateTime(parsed);
       }
     }
     
@@ -163,7 +180,7 @@ class CitizenReportServiceSingleton {
       urgencyReasoning: r.urgencyReasoning || r.description || 'Verified citizen civic intake requiring immediate evaluation.',
       photoBase64: r.photoBase64 || r.rawMediaUrl || (r.images?.[0]),
       intakeType: r.intakeType || r.inputMethod || 'TEXT',
-      timestamp: r.timestamp || 'Just now',
+      timestamp: (r.timestamp && !r.timestamp.toLowerCase().includes('just now')) ? r.timestamp : new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' • ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase(),
       location: {
         lat: r.location.lat,
         lng: r.location.lng,
@@ -278,10 +295,17 @@ class CitizenReportServiceSingleton {
       }
     }
 
+    const now = new Date();
+    const day = now.toLocaleDateString('en-IN', { weekday: 'short' });
+    const date = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+    const formattedNow = `${day}, ${date} • ${time}`;
+
     const newReport = this.normalizeReport({
       ...payload,
       id: newReportId,
-      timestamp: 'Just now',
+      createdAt: now.getTime(),
+      timestamp: formattedNow,
     });
 
     // Save to map

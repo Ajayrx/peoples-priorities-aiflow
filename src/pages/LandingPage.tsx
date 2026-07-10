@@ -94,6 +94,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
         population: 380,
         details: 'Individual Monitored Pin',
         reportCount: 1,
+        timestamp: r.timestamp || 'Sat, 11 Jul • 11:45 AM',
       })),
     ];
   }, [clusters, individualReports]);
@@ -304,9 +305,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                       </span>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-700 mb-3 line-clamp-2 leading-relaxed font-medium">
+                    <p className="text-xs sm:text-sm text-slate-700 mb-2 line-clamp-2 leading-relaxed font-medium">
                       {activeItem.description}
                     </p>
+                    {!activeItem.isCluster && (activeItem as any).timestamp && (
+                      <div className="text-[11px] font-mono font-bold text-purple-900 mb-2 flex items-center gap-1.5">
+                        🕒 {(activeItem as any).timestamp}
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between text-xs font-mono text-slate-500 border-t border-slate-200/80 pt-2.5 flex-wrap gap-2">
                       <span className="font-semibold">Pop: {activeItem.population.toLocaleString()}</span>

@@ -443,13 +443,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                                 >
                                   "{rep.rawText || rep.aiProcessing?.transcription || rep.aiProcessing?.aiSummary || 'Verified spoken civic report.'}"
                                 </p>
+                                <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+                                  <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+                                  <span className="font-bold text-teal-800">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
+                                </div>
                               </div>
                             </div>
                             <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-teal-200/60 sm:border-0 gap-2">
                               <span className="px-2 py-1 rounded-lg bg-white border border-teal-200 font-mono text-[11px] sm:text-xs font-black text-teal-800 shadow-2xs block shrink-0">
                                 Score: {rep.aiProcessing?.aiConfidenceScore || 94}/100
                               </span>
-                              <span className="text-[10px] font-mono text-slate-400 block shrink-0">{rep.timestamp || 'Just now'}</span>
                             </div>
                           </div>
                         );
@@ -482,8 +485,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                               >
                                 {rep.rawText || rep.aiProcessing?.imageDefectDetected || rep.aiProcessing?.aiSummary || 'Verified structural deterioration captured via photo.'}
                               </p>
-                              <div className="text-[10px] sm:text-[11px] font-mono text-emerald-800 mt-1.5 flex items-center gap-1.5 flex-wrap min-w-0 break-words">
+                              <div className="text-[10px] sm:text-[11px] font-mono text-emerald-800 mt-1.5 flex items-center justify-between gap-2 flex-wrap min-w-0 break-words">
                                 <span className="truncate min-w-0">📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+                                <span className="font-bold text-emerald-900 shrink-0">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
                               </div>
                             </div>
                           </div>
@@ -513,13 +517,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                                 >
                                   "{rep.rawText || rep.aiProcessing?.transcription || 'Written civic intake.'}"
                                 </p>
+                                <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+                                  <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+                                  <span className="font-bold text-slate-700">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
+                                </div>
                               </div>
                             </div>
                             <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-slate-200 sm:border-0 gap-2">
                               <span className="px-2 py-1 rounded-lg bg-white border border-slate-300 font-mono text-[11px] sm:text-xs font-black text-slate-800 shadow-2xs block shrink-0">
                                 Score: {rep.aiProcessing?.aiConfidenceScore || 90}/100
                               </span>
-                              <span className="text-[10px] font-mono text-slate-400 block shrink-0">{rep.timestamp || 'Just now'}</span>
                             </div>
                           </div>
                         );
