@@ -63,7 +63,25 @@ class CitizenReportServiceSingleton {
     const description = raw.description || raw.urgencyReasoning || raw.rawText || 'Verified citizen civic intake requiring immediate evaluation.';
     const photoUrl = raw.photoBase64 || raw.rawMediaUrl || (raw.images && raw.images.length > 0 ? raw.images[0] : undefined);
     const intakeMethod: 'VOICE' | 'PHOTO' | 'TEXT' = raw.inputMethod || raw.intakeType || (photoUrl ? 'PHOTO' : 'TEXT');
-    const timestampStr = raw.timestamp || (raw.createdAt ? String(raw.createdAt) : 'Just now');
+    
+    let timestampStr = raw.timestamp;
+    if (!timestampStr) {
+      if (raw.createdAt) {
+        if (typeof raw.createdAt.toDate === 'function') {
+          timestampStr = raw.createdAt.toDate().toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
+        } else if (raw.createdAt.seconds !== undefined) {
+          timestampStr = new Date(raw.createdAt.seconds * 1000).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
+        } else if (typeof raw.createdAt === 'string') {
+          timestampStr = raw.createdAt;
+        } else if (raw.createdAt instanceof Date) {
+          timestampStr = raw.createdAt.toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, day: 'numeric', month: 'short' });
+        } else {
+          timestampStr = 'Just now';
+        }
+      } else {
+        timestampStr = 'Just now';
+      }
+    }
     
     const rawLoc = raw.location || {};
     const location = {
@@ -72,7 +90,7 @@ class CitizenReportServiceSingleton {
       state: rawLoc.state || raw.state || 'India',
       district: rawLoc.district || raw.district || 'Nationwide District',
       constituency: rawLoc.constituency || raw.constituency || 'National PC',
-      blockOrTown: rawLoc.blockOrTown || rawLoc.address || raw.address || 'Verified Civic Locality',
+      blockOrTown: rawLoc.blockOrTown || raw.address || 'Verified Civic Locality',
       villageOrWard: rawLoc.villageOrWard || 'Verified Citizen Pin',
     };
 
@@ -109,7 +127,7 @@ class CitizenReportServiceSingleton {
         state: location.state || 'India',
         district: location.district || 'Nationwide District',
         constituency: location.constituency || 'National PC',
-        blockOrTown: location.blockOrTown || raw.address || 'Verified Locality',
+        blockOrTown: location.blockOrTown || raw.address || 'Verified Civic Locality',
         villageOrWard: location.villageOrWard || 'Ward / Village',
       },
       inputMethod: intakeMethod,
@@ -265,7 +283,7 @@ class CitizenReportServiceSingleton {
     // Non-blocking Cloud Firestore sync
     const db = getSafeFirestoreInstance();
     if (db) {
-      const cloudPayload = {
+      const rawPayload = {
         ...newReport,
         photoBase64: newReport.photoBase64 && newReport.photoBase64.length > 600000
           ? newReport.photoBase64.slice(0, 600000)
@@ -273,6 +291,31 @@ class CitizenReportServiceSingleton {
         images: newReport.images?.map(img => img.length > 600000 ? img.slice(0, 600000) : img) || [],
         createdAt: serverTimestamp(),
       };
+
+      // Helper function to remove undefined fields recursively so Firestore doesn't throw a validation error
+      const cleanPayload = (obj: any): any => {
+        if (obj === null || obj === undefined) return null;
+        if (obj && typeof obj === 'object' && ('_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
+          return obj;
+        }
+        if (Array.isArray(obj)) {
+          return obj.map(cleanPayload);
+        }
+        if (typeof obj === 'object') {
+          const cleaned: any = {};
+          for (const key of Object.keys(obj)) {
+            const val = obj[key];
+            if (val !== undefined) {
+              cleaned[key] = cleanPayload(val);
+            }
+          }
+          return cleaned;
+        }
+        return obj;
+      };
+
+      const cloudPayload = cleanPayload(rawPayload);
+
       addDoc(collection(db, 'citizen_reports'), cloudPayload)
         .then((docRef: any) => console.log('✅ Synchronized to Google Cloud Firestore:', docRef?.id))
         .catch((err) => console.warn('Cloud write fallback (stored in local ledger):', err.message));

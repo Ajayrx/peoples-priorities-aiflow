@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   MapPin, 
   ArrowRight, 
@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
-import type { Hotspot, Region } from '../types';
+import type { Region } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface LandingPageProps {
@@ -20,19 +20,90 @@ interface LandingPageProps {
   onResetToDemoRegion: () => void;
 }
 
+import { useMemo } from 'react';
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, onResetToDemoRegion: _onResetToDemoRegion }) => {
   const { t } = useLanguage();
   const { hotspots: storeHotspots, reports } = useCitizenStore();
-  const displayHotspots = storeHotspots;
-  const [activeHeroHotspot, setActiveHeroHotspot] = useState<Hotspot | null>(displayHotspots[0] || null);
 
-  useEffect(() => {
-    if (displayHotspots.length > 0 && (!activeHeroHotspot || !displayHotspots.some(h => h.id === activeHeroHotspot.id))) {
-      setActiveHeroHotspot(displayHotspots[0]);
-    }
-  }, [displayHotspots, activeHeroHotspot]);
+  // Filter reports and hotspots by current region so the Hero Radar updates when the navbar region switches
+  const filteredReports = useMemo(() => {
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const distName = region.district.replace(' District', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
 
-  const { clusters, individualReports } = runClusterEngine(reports, displayHotspots);
+    return reports.filter((rep) => {
+      return isAll
+        ? true
+        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
+          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+    });
+  }, [reports, region]);
+
+  const filteredHotspots = useMemo(() => {
+    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
+    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
+
+    return storeHotspots.filter((hs) => {
+      return isAll
+        ? true
+        : ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
+          (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
+    });
+  }, [storeHotspots, region]);
+
+  const { clusters, individualReports } = useMemo(() => {
+    return runClusterEngine(filteredReports, filteredHotspots);
+  }, [filteredReports, filteredHotspots]);
+
+  // UI layout spec: Grid has 9 slots total. Up to 6 are occupied by clusters (hotspots).
+  // The remaining slots (at least 3, up to 9 if no clusters are available) are occupied by individual complaints.
+  const heroGridItems = useMemo(() => {
+    const selectedClusters = clusters.slice(0, 6);
+    const remainingSlots = 9 - selectedClusters.length;
+    const selectedComplaints = individualReports.slice(0, remainingSlots);
+
+    return [
+      ...selectedClusters.map((c) => ({
+        id: c.id,
+        isCluster: true,
+        raw: c,
+        name: c.name,
+        category: c.category,
+        priorityLevel: c.priorityLevel,
+        priorityScore: c.priorityScore,
+        locationName: c.location.blockOrTown || 'Clustered Area',
+        description: c.aiSynthesis?.reasoning || 'AI spatial analysis active.',
+        population: c.metrics?.impactedPopulation || 12500,
+        details: `${c.metrics?.nearbySchoolsCount ?? 0} Schools / 0 PHC`,
+        reportCount: c.metrics?.citizenReportCount || c.recentReports?.length || 1,
+      })),
+      ...selectedComplaints.map((r) => ({
+        id: r.id,
+        isCluster: false,
+        raw: r,
+        name: r.title || r.detectedIssue || 'Citizen Complaint',
+        category: r.category,
+        priorityLevel: r.priority || r.priorityLevel || 'HIGH',
+        priorityScore: r.priorityScore || r.aiConfidence || 94,
+        locationName: r.location?.blockOrTown || r.address || 'Verified Pin',
+        description: r.description || r.urgencyReasoning || 'Citizen reported defect under review.',
+        population: 380,
+        details: 'Individual Monitored Pin',
+        reportCount: 1,
+      })),
+    ];
+  }, [clusters, individualReports]);
+
+  // Keep track of active item index/id
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+
+  const activeItem = useMemo(() => {
+    return heroGridItems.find(item => item.id === activeItemId) || heroGridItems[0] || null;
+  }, [heroGridItems, activeItemId]);
 
   const cleanConstituencyName = region.constituency.replace(' (Demo Region)', '');
   const displayConstituencyTitle = cleanConstituencyName.includes('PC')
@@ -161,59 +232,46 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
 
                 {/* Hotspot & Cluster Radar Pins Grid */}
                 <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 max-h-[220px] overflow-y-auto pr-1">
-                  {displayHotspots.map((hs) => {
-                    const isSelected = activeHeroHotspot?.id === hs.id;
+                  {heroGridItems.map((item) => {
+                    const isSelected = activeItem?.id === item.id;
                     return (
                       <button
-                        key={hs.id}
-                        onClick={() => setActiveHeroHotspot(hs)}
-                        className={`text-left p-3 sm:p-3.5 rounded-2xl transition-all duration-200 border ${
-                          isSelected
-                            ? 'bg-white border-teal-600 shadow-xl shadow-teal-600/10 scale-[1.03] ring-2 ring-teal-500/20'
-                            : 'bg-white/90 border-slate-200/80 hover:bg-white hover:border-slate-300'
+                        key={item.id}
+                        onClick={() => setActiveItemId(item.id)}
+                        className={`text-left p-3 sm:p-3.5 rounded-2xl transition-all duration-200 border flex flex-col justify-between ${
+                          item.isCluster
+                            ? isSelected
+                              ? 'bg-white border-teal-600 shadow-xl shadow-teal-600/10 scale-[1.03] ring-2 ring-teal-500/20'
+                              : 'bg-white/90 border-slate-200/80 hover:bg-white hover:border-slate-300'
+                            : isSelected
+                              ? 'bg-white border-purple-600 shadow-xl shadow-purple-600/10 scale-[1.03] ring-2 ring-purple-500/20'
+                              : 'bg-purple-50/70 border-purple-200/50 hover:bg-purple-50 hover:border-purple-300'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-1 mb-1.5">
-                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-extrabold ${
-                            hs.priorityLevel === 'CRITICAL' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
-                            hs.priorityLevel === 'HIGH' ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' :
-                            'bg-teal-50 text-teal-800 border border-teal-300'
+                        <div className="flex items-center justify-between gap-1 mb-1.5 w-full">
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-extrabold truncate ${
+                            item.isCluster
+                              ? item.priorityLevel === 'CRITICAL' ? 'bg-amber-50 text-amber-800 border border-amber-300' :
+                                item.priorityLevel === 'HIGH' ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' :
+                                'bg-teal-50 text-teal-800 border border-teal-300'
+                              : 'bg-purple-100 text-purple-900 border border-purple-255'
                           }`}>
-                            {t('landing.score')} {hs.priorityScore}
+                            {item.isCluster ? `${t('landing.score')} ${item.priorityScore}` : t('landing.individualPin')}
                           </span>
-                          {hs.priorityLevel === 'CRITICAL' && (
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                          {item.priorityLevel === 'CRITICAL' && item.isCluster && (
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
                           )}
                         </div>
-                        <div className="font-extrabold text-xs sm:text-sm text-slate-900 truncate">
-                          {hs.location.blockOrTown}
+                        <div className={`font-extrabold text-xs sm:text-sm truncate w-full ${item.isCluster ? 'text-slate-900' : 'text-purple-950'}`}>
+                          {item.locationName}
                         </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-500 truncate mt-0.5 font-medium">
-                          {t(`cat.${hs.category.toLowerCase()}`)} • {hs.metrics?.citizenReportCount || hs.recentReports?.length || 1} {t('landing.reports')}
+                        <div className={`text-[10px] sm:text-[11px] truncate mt-0.5 font-medium w-full ${item.isCluster ? 'text-slate-500' : 'text-purple-700'}`}>
+                          {t(`cat.${item.category.toLowerCase()}`)} • {item.isCluster ? `${item.reportCount} ${t('landing.reports')}` : t('landing.monitoredDemand')}
                         </div>
                       </button>
                     );
                   })}
-                  {/* Show individual unclustered pins if present */}
-                  {individualReports.slice(0, 3).map((rep) => (
-                    <div
-                      key={rep.id}
-                      className="text-left p-3 sm:p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200/80"
-                    >
-                      <div className="flex items-center justify-between gap-1 mb-1.5">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-extrabold bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1">
-                          {t('landing.individualPin')}
-                        </span>
-                      </div>
-                      <div className="font-extrabold text-xs sm:text-sm text-purple-950 truncate">
-                        {rep.detectedIssue || rep.title || rep.location.blockOrTown}
-                      </div>
-                      <div className="text-[10px] sm:text-[11px] text-purple-700 truncate mt-0.5 font-medium">
-                        {t(`cat.${rep.category.toLowerCase()}`)} • {t('landing.monitoredDemand')}
-                      </div>
-                    </div>
-                  ))}
-                  {displayHotspots.length === 0 && individualReports.length === 0 && (
+                  {heroGridItems.length === 0 && (
                     <div className="col-span-1 sm:col-span-3 p-6 rounded-2xl bg-white/90 border border-slate-200 text-center space-y-2">
                       <div className="text-sm font-extrabold text-slate-800">
                         {t('landing.noClusters')} {region.constituency.replace(' (Demo Region)', '')} yet
@@ -225,32 +283,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                   )}
                 </div>
 
-                {/* Selected Hotspot Intelligence Briefing Card */}
-                {activeHeroHotspot && (
-                  <div className="relative z-20 mt-auto bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xl">
+                {/* Selected Item (Hotspot/Complaint) Intelligence Briefing Card */}
+                {activeItem && (
+                  <div className="relative z-20 mt-auto bg-white/95 backdrop-blur-2xl border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xl animate-scaleUp">
                     <div className="flex items-start sm:items-center justify-between gap-2.5 mb-2">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="w-2.5 h-2.5 rounded-full bg-teal-600 shrink-0" />
-                        <h4 className="font-extrabold text-sm sm:text-base text-slate-900 truncate">
-                          {activeHeroHotspot.name}
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${activeItem.isCluster ? 'bg-teal-600 animate-pulse' : 'bg-purple-600'}`} />
+                        <h4 className={`font-extrabold text-sm sm:text-base truncate ${activeItem.isCluster ? 'text-slate-900' : 'text-purple-950'}`}>
+                          {activeItem.name}
                         </h4>
                       </div>
                       <span className={`text-[11px] sm:text-xs font-mono font-extrabold shrink-0 px-2.5 py-0.5 rounded-full border whitespace-nowrap inline-flex items-center ${
-                        activeHeroHotspot.priorityLevel === 'CRITICAL' ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-xs' :
-                        activeHeroHotspot.priorityLevel === 'HIGH' ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs' :
-                        'bg-teal-50 text-teal-800 border-teal-300 shadow-xs'
+                        activeItem.isCluster
+                          ? activeItem.priorityLevel === 'CRITICAL' ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-xs' :
+                            activeItem.priorityLevel === 'HIGH' ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs' :
+                            'bg-teal-50 text-teal-800 border-teal-300 shadow-xs'
+                          : 'bg-purple-100 text-purple-900 border-purple-200 shadow-xs'
                       }`}>
-                        {activeHeroHotspot.priorityLevel}
+                        {activeItem.priorityLevel}
                       </span>
                     </div>
 
                     <p className="text-xs sm:text-sm text-slate-700 mb-3 line-clamp-2 leading-relaxed font-medium">
-                      {activeHeroHotspot.aiSynthesis?.reasoning || 'Multi-factor development intelligence active across demand, severity, and equity metrics.'}
+                      {activeItem.description}
                     </p>
 
                     <div className="flex items-center justify-between text-xs font-mono text-slate-500 border-t border-slate-200/80 pt-2.5 flex-wrap gap-2">
-                      <span className="font-semibold">Pop: {(activeHeroHotspot.metrics?.impactedPopulation || 12500).toLocaleString()}</span>
-                      <span className="font-semibold">Deficit: {activeHeroHotspot.metrics?.nearbySchoolsCount ?? 0} Sch / 0 PHC</span>
+                      <span className="font-semibold">Pop: {activeItem.population.toLocaleString()}</span>
+                      <span className="font-semibold">Details: {activeItem.details}</span>
                       <button
                         onClick={() => onNavigate('explore')}
                         className="text-teal-700 hover:text-teal-900 hover:underline font-sans font-bold flex items-center gap-1 ml-auto"
