@@ -232,19 +232,30 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
     { id: 'Schools', label: t('cat.schools') },
   ];
 
-  // Map center coordinates based on active hotspot or constituency coordinates
+  // Map center coordinates based on active hotspot, reports, or constituency coordinates
   const mapCenter: [number, number] = useMemo(() => {
     if (activeHotspot) {
       return [activeHotspot.location.center.lat, activeHotspot.location.center.lng];
     }
+    if (filteredReports.length > 0) {
+      const firstRep = filteredReports[0];
+      const lat = firstRep.location?.lat || firstRep.latitude;
+      const lng = firstRep.location?.lng || firstRep.longitude;
+      if (lat && lng && lat !== 20.5937 && lng !== 78.9629) {
+        return [lat, lng];
+      }
+    }
+    if (filteredHotspots.length > 0) {
+      const center = filteredHotspots[0].location.center;
+      if (center.lat !== 20.5937 && center.lng !== 78.9629) {
+        return [center.lat, center.lng];
+      }
+    }
     if (region.isAllIndia || region.state === 'All India') {
       return [20.5937, 78.9629]; // All India Center
     }
-    if (filteredHotspots.length > 0) {
-      return [filteredHotspots[0].location.center.lat, filteredHotspots[0].location.center.lng];
-    }
     return getRegionGeocode(region);
-  }, [activeHotspot, region, filteredHotspots]);
+  }, [activeHotspot, region, filteredHotspots, filteredReports]);
 
   // Infrastructure points across India to display when showInfrastructure is ON
   const infrastructurePoints = useMemo(() => [
@@ -654,11 +665,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                     filteredReports.map((rep, idx) => {
                       const baseLat = rep.location?.lat || rep.latitude || 18.8135;
                       const baseLng = rep.location?.lng || rep.longitude || 82.7125;
-                      // Jitter dispersal so multiple complaints at the exact same block/cluster center never hide or stack
-                      const goldenAngle = idx * 2.39996; // Golden angle radian multiplier
-                      const dispersalRadius = 0.0035 + (idx % 4) * 0.0018; // ~380m to 750m dispersion
-                      const repLat = baseLat + Math.cos(goldenAngle) * dispersalRadius;
-                      const repLng = baseLng + Math.sin(goldenAngle) * dispersalRadius;
+                      const repLat = baseLat;
+                      const repLng = baseLng;
 
                       const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.rawMediaUrl ? 'PHOTO' : 'TEXT');
                       const pinColor = intakeMethod === 'VOICE' ? '#2563EB' : intakeMethod === 'PHOTO' ? '#9333EA' : '#0D9488';

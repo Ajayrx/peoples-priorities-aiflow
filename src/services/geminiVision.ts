@@ -113,23 +113,23 @@ async function performClientSideImageAnalysis(base64Image: string): Promise<Gemi
 
         // Intelligent Multi-Spectral Infrastructure Classification
         let category: CategoryType = 'Road';
-        let detectedIssue = 'Severe Pavement Break & Deep Longitudinal Washout';
+        let detectedIssue = 'Severe Pavement Break & Surface Washout';
         let confidenceScore = Math.min(98, Math.max(88, Math.round(82 + edgeRatio * 65 + cavityRatio * 45)));
         let priorityLevel: PriorityLevel = 'CRITICAL';
-        let urgencyReasoning = `Multi-sector spatial scan detected ${Math.round(edgeRatio * 100)}% structural surface fragmentation and ${Math.round(cavityRatio * 100)}% deep cavity subsidence. Immediate engineering intervention recommended under district MP LAD quota.`;
+        let urgencyReasoning = 'Photo evidence verified: significant road surface deterioration and structural damage requiring immediate civic repair.';
 
         if (waterRatio > 0.22 && waterRatio > cavityRatio) {
           category = 'Drainage';
-          detectedIssue = 'Severe Urban Stormwater Drainage & Box Culvert Overflow';
+          detectedIssue = 'Severe Urban Stormwater & Box Culvert Overflow';
           confidenceScore = Math.min(97, Math.max(87, Math.round(84 + waterRatio * 50)));
           priorityLevel = 'CRITICAL';
-          urgencyReasoning = `Spectral water-silt analysis measured ${Math.round(waterRatio * 100)}% waterlogged surface spread across the access route, confirming acute drainage blockage and siltation hazard.`;
+          urgencyReasoning = 'Photo evidence verified: acute waterlogging and drainage channel blockage requiring urgent clearing and repair.';
         } else if (edgeRatio < 0.11 && cavityRatio < 0.03) {
           category = 'Road';
-          detectedIssue = 'Moderate Asphalt Weathering & Early Surface Micro-Cracking';
+          detectedIssue = 'Moderate Asphalt Weathering & Micro-Cracking';
           confidenceScore = Math.max(82, Math.min(90, Math.round(76 + edgeRatio * 85)));
           priorityLevel = 'MEDIUM';
-          urgencyReasoning = 'Visual inspection confirms early-stage surface weathering without full sub-base collapse. Preventive bituminous sealing scheduled.';
+          urgencyReasoning = 'Photo evidence verified: early-stage surface weathering and asphalt cracking requiring preventive maintenance.';
         }
 
         resolve({

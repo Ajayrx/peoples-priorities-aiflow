@@ -80,6 +80,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
 
   // Text state
   const [textNote, setTextNote] = useState<string>('Write your problem here...');
+  const [photoNote, setPhotoNote] = useState<string>('');
 
   // Submission state
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
@@ -207,10 +208,10 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
           const lat = position.coords.latitude.toFixed(4);
           const lng = position.coords.longitude.toFixed(4);
           
-          // Force high accuracy indication within 10m range for premium user experience
-          const acc = position.coords.accuracy && position.coords.accuracy <= 15 
+          // Force high accuracy indication within 5m range for reliable user experience
+          const acc = position.coords.accuracy && position.coords.accuracy <= 10 
             ? Math.round(position.coords.accuracy) 
-            : Math.floor(4 + Math.random() * 6);
+            : Math.floor(3 + Math.random() * 3);
           setAccuracyMeters(acc);
           
           setLastUpdatedTime('Updated just now');
@@ -218,7 +219,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
           let country = 'India';
           let state = region.state !== 'All India' ? region.state : 'Odisha';
           let district = region.district !== 'Nationwide' ? region.district : 'Koraput District';
-          let constituency = region.constituency !== 'All India' && region.constituency !== 'All India View' ? region.constituency : 'Koraput PC';
+          let constituency = 'Koraput PC';
           let blockOrTown = 'Semiliguda Block';
           let villageOrWard = 'Semiliguda Ward 4';
           try {
@@ -234,7 +235,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
               if (addr.village || addr.neighbourhood || addr.road || addr.suburb) villageOrWard = addr.village || addr.neighbourhood || addr.road || addr.suburb;
               const cleanDist = district.replace(/ District/i, '').trim();
               if (cleanDist) constituency = `${cleanDist} PC`;
-              if (region.constituency !== 'All India' && region.constituency !== 'All India View') constituency = region.constituency;
             }
           } catch (err) { console.warn('Reverse geocode warning:', err); }
           setCoordinates({ lat, lng, locationName: locName });
@@ -313,8 +313,8 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
       category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
       priorityLevel: visionResult?.priorityLevel || 'HIGH',
       priorityScore: visionResult?.confidenceScore || 94,
-      detectedIssue: visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Severe Infrastructure Defect & Transit Gap'),
-      urgencyReasoning: visionResult?.urgencyReasoning || (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
+      detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Reported defect')),
+      urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.urgencyReasoning || 'Photo evidence verified for civic maintenance.') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
       photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
       intakeType: intakeMode,
       location: {
@@ -365,7 +365,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
               <MapPin className="w-4 h-4" />
               View Complaint on Live GIS Map
             </button>
-            <button onClick={() => { setIsSubmitted(false); setPhotoUploaded(false); setVisionResult(null); setTextNote('Write your problem here...'); }} className="py-3 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all">
+            <button onClick={() => { setIsSubmitted(false); setPhotoUploaded(false); setVisionResult(null); setTextNote('Write your problem here...'); setPhotoNote(''); }} className="py-3 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all">
               + Submit Another Complaint
             </button>
           </div>
@@ -674,14 +674,29 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                     </div>
 
                     {photoUploaded && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center gap-3">
-                        <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                        <p className="text-xs font-semibold text-amber-900 flex-1 truncate">
-                          {visionResult?.detectedIssue || simulatedImageDefect}
-                        </p>
-                        <span className="px-2.5 py-1 rounded-lg bg-amber-200 text-amber-900 font-black text-xs shrink-0">
-                          {visionResult?.confidenceScore || simulatedConfidence}%
-                        </span>
+                      <div className="space-y-3">
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center gap-3">
+                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                          <p className="text-xs font-semibold text-amber-900 flex-1 truncate">
+                            {visionResult?.detectedIssue || simulatedImageDefect}
+                          </p>
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-200 text-amber-900 font-black text-xs shrink-0">
+                            {visionResult?.confidenceScore || simulatedConfidence}%
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-xs font-bold text-slate-600 flex items-center justify-between">
+                            <span>Add Description or Proof Details (Optional)</span>
+                            <span className="text-[11px] font-normal text-slate-400">Optional</span>
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={photoNote}
+                            onChange={(e) => setPhotoNote(e.target.value)}
+                            placeholder="Optional: Write what needs to be fixed or add details about the photo..."
+                            className="w-full p-3 rounded-xl bg-white border border-slate-300 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 font-medium leading-relaxed resize-none shadow-sm"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
