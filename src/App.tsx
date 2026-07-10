@@ -7,14 +7,15 @@ import { ReportPage } from './pages/ReportPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ManagementPage } from './pages/ManagementPage';
 import { CitizenStoreProvider, useCitizenStore } from './context/CitizenStoreContext';
-import { MOCK_HOTSPOTS } from './data/mockData';
+import type { Region } from './types';
 
-function RegionStoreSync({ region }: { region: { state: string; district: string; constituency: string } }) {
+function RegionStoreSync({ region }: { region: Region }) {
   const { setBaseHotspots } = useCitizenStore();
   
   useEffect(() => {
-    const isDemoRegion = region.constituency.toLowerCase().includes('koraput') || region.district.toLowerCase().includes('koraput');
-    setBaseHotspots(isDemoRegion ? [...MOCK_HOTSPOTS] : []);
+    // For nationwide view or any state/district/constituency selection across India,
+    // we initialize with a clean base and let the ClusterEngine dynamically cluster real citizen intakes!
+    setBaseHotspots([]);
   }, [region, setBaseHotspots]);
 
   return null;
@@ -23,17 +24,19 @@ function RegionStoreSync({ region }: { region: { state: string; district: string
 export function App() {
   const [currentTab, setCurrentTab] = useState<string>('landing');
   const [isOnline] = useState<boolean>(true);
-  const [region, setRegion] = useState<{ state: string; district: string; constituency: string }>({
-    state: 'Odisha',
-    district: 'Koraput District',
-    constituency: 'Koraput PC (Demo Region)',
+  const [region, setRegion] = useState<Region>({
+    state: 'All India',
+    district: 'Nationwide',
+    constituency: 'All India (Nationwide View)',
+    isAllIndia: true,
   });
 
   const handleResetToDemoRegion = () => {
     setRegion({
-      state: 'Odisha',
-      district: 'Koraput District',
-      constituency: 'Koraput PC (Demo Region)',
+      state: 'All India',
+      district: 'Nationwide',
+      constituency: 'All India (Nationwide View)',
+      isAllIndia: true,
     });
   };
 

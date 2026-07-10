@@ -16,6 +16,9 @@ export interface Region {
   state: string;
   district: string;
   constituency: string;
+  assemblyConstituency?: string;
+  wardOrVillage?: string;
+  isAllIndia?: boolean;
 }
 
 export type PriorityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'MONITORED';
@@ -167,4 +170,10 @@ export interface DashboardStats {
   verifiedReports: number;
   categoryCounts: Record<string, number>;
   avgAiConfidence: number;
+  individualReportsCount?: number;
+  emergingClustersCount?: number;
+  mediumClustersCount?: number;
+  highClustersCount?: number;
+  criticalClustersCount?: number;
+  totalImpactedPopulation?: number;
 }

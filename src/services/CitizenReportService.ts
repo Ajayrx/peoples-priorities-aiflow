@@ -17,6 +17,7 @@ import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
 import type { CitizenReport, Hotspot, CategoryType, PriorityLevel, DashboardStats } from '../types';
 import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
+import { runClusterEngine } from './ClusterEngine';
 import type { LiveCitizenReport } from './liveCloudBus';
 
 const STORAGE_KEY_REPORTS = 'peoples_priorities_live_reports_v1';
@@ -65,12 +66,12 @@ class CitizenReportServiceSingleton {
     const timestampStr = raw.timestamp || (raw.createdAt ? String(raw.createdAt) : 'Just now');
     
     const location = raw.location || {
-      lat: raw.latitude || 18.7083,
-      lng: raw.longitude || 82.8465,
-      state: 'Odisha',
-      district: 'Koraput',
-      constituency: 'Koraput PC',
-      blockOrTown: raw.address || 'Semiliguda',
+      lat: raw.latitude || 20.5937,
+      lng: raw.longitude || 78.9629,
+      state: raw.state || 'India',
+      district: raw.district || 'Nationwide District',
+      constituency: raw.constituency || 'National PC',
+      blockOrTown: raw.address || 'Verified Civic Locality',
       villageOrWard: 'Verified Citizen Pin',
     };
 
@@ -83,9 +84,9 @@ class CitizenReportServiceSingleton {
       category,
       priority: priorityLevel,
       status: raw.status || raw.verificationStatus || 'VERIFIED',
-      latitude: location.lat || 18.7083,
-      longitude: location.lng || 82.8465,
-      address: raw.address || location.blockOrTown || 'Semiliguda',
+      latitude: location.lat || 20.5937,
+      longitude: location.lng || 78.9629,
+      address: raw.address || location.blockOrTown || 'Verified Locality',
       images: photoUrl ? [photoUrl] : (raw.images || []),
       voiceUrl: raw.voiceUrl,
       createdAt: raw.createdAt || timestampStr,
@@ -101,13 +102,13 @@ class CitizenReportServiceSingleton {
       // Canonical mappings for backward compatibility across all UI components
       timestamp: timestampStr,
       location: {
-        lat: location.lat || 18.7083,
-        lng: location.lng || 82.8465,
-        state: location.state || 'Odisha',
-        district: location.district || 'Koraput',
-        constituency: location.constituency || 'Koraput PC',
-        blockOrTown: location.blockOrTown || raw.address || 'Semiliguda',
-        villageOrWard: location.villageOrWard || 'Verified Citizen Pin',
+        lat: location.lat || 20.5937,
+        lng: location.lng || 78.9629,
+        state: location.state || 'India',
+        district: location.district || 'Nationwide District',
+        constituency: location.constituency || 'National PC',
+        blockOrTown: location.blockOrTown || raw.address || 'Verified Locality',
+        villageOrWard: location.villageOrWard || 'Ward / Village',
       },
       inputMethod: intakeMethod,
       intakeType: intakeMethod,
@@ -177,7 +178,7 @@ class CitizenReportServiceSingleton {
   /**
    * Calculates canonical Dashboard Statistics from the exact same source of truth.
    */
-  public getDashboardStats(reports: CitizenReport[]): DashboardStats {
+  public getDashboardStats(reports: CitizenReport[], hotspots: Hotspot[] = []): DashboardStats {
     const totalReports = reports.length;
     let criticalReports = 0;
     let verifiedReports = 0;
@@ -197,12 +198,37 @@ class CitizenReportServiceSingleton {
 
     const avgAiConfidence = totalReports > 0 ? Math.round(totalConfidence / totalReports) : 96;
 
+    // Run exact cluster engine breakdown if hotspots are provided, or derive from reports
+    const { clusters, individualReports, emergingClusters } = runClusterEngine(reports, hotspots);
+
+    let mediumClustersCount = 0;
+    let highClustersCount = 0;
+    let criticalClustersCount = 0;
+    let totalImpactedPopulation = 0;
+
+    for (const cl of clusters) {
+      totalImpactedPopulation += cl.metrics.impactedPopulation || 0;
+      if (cl.priorityLevel === 'CRITICAL') criticalClustersCount += 1;
+      else if (cl.priorityLevel === 'HIGH') highClustersCount += 1;
+      else if (cl.priorityLevel === 'MEDIUM') mediumClustersCount += 1;
+    }
+
+    for (const _ind of individualReports) {
+      totalImpactedPopulation += 380; // Default population footprint of an individual monitored report
+    }
+
     return {
       totalReports,
       criticalReports,
       verifiedReports,
       categoryCounts,
       avgAiConfidence,
+      individualReportsCount: individualReports.length,
+      emergingClustersCount: emergingClusters?.length || 0,
+      mediumClustersCount,
+      highClustersCount,
+      criticalClustersCount,
+      totalImpactedPopulation,
     };
   }
 
@@ -345,21 +371,48 @@ class CitizenReportServiceSingleton {
     };
   }
 
+  private getAllUnifiedReports(reportsList: CitizenReport[], hotspotsList: Hotspot[]): CitizenReport[] {
+    const map = new Map<string, CitizenReport>();
+    hotspotsList.forEach((hs) => {
+      (hs.recentReports || []).forEach((r) => {
+        const norm = this.normalizeReport({
+          ...r,
+          assignedHotspotId: hs.id,
+          hotspotId: hs.id,
+          location: r.location || hs.location?.center || { lat: 20.5937, lng: 78.9629, blockOrTown: hs.location?.blockOrTown || 'Verified Locality' },
+          latitude: r.latitude || r.location?.lat || hs.location?.center?.lat || 20.5937,
+          longitude: r.longitude || r.location?.lng || hs.location?.center?.lng || 78.9629,
+        });
+        map.set(norm.id, norm);
+      });
+    });
+    reportsList.forEach((r) => {
+      map.set(r.id, r);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      const scoreA = a.priorityScore || a.aiConfidence || 90;
+      const scoreB = b.priorityScore || b.aiConfidence || 90;
+      return scoreB - scoreA;
+    });
+  }
+
   private emitToListener(onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void) {
-    const reportsList = Array.from(this.currentReportsMap.values());
-    const hotspotsList = this.getHotspots(reportsList, this.baseHotspots);
-    const stats = this.getDashboardStats(reportsList);
-    const rankedList = this.getRankedPriorityList(reportsList);
-    onUpdate(reportsList, hotspotsList, stats, rankedList);
+    const rawReportsList = Array.from(this.currentReportsMap.values());
+    const hotspotsList = this.getHotspots(rawReportsList, this.baseHotspots);
+    const unifiedReports = this.getAllUnifiedReports(rawReportsList, hotspotsList);
+    const stats = this.getDashboardStats(unifiedReports, hotspotsList);
+    const rankedList = this.getRankedPriorityList(unifiedReports);
+    onUpdate(unifiedReports, hotspotsList, stats, rankedList);
   }
 
   private notifyAll() {
-    const reportsList = Array.from(this.currentReportsMap.values());
-    const hotspotsList = this.getHotspots(reportsList, this.baseHotspots);
-    const stats = this.getDashboardStats(reportsList);
-    const rankedList = this.getRankedPriorityList(reportsList);
+    const rawReportsList = Array.from(this.currentReportsMap.values());
+    const hotspotsList = this.getHotspots(rawReportsList, this.baseHotspots);
+    const unifiedReports = this.getAllUnifiedReports(rawReportsList, hotspotsList);
+    const stats = this.getDashboardStats(unifiedReports, hotspotsList);
+    const rankedList = this.getRankedPriorityList(unifiedReports);
     for (const listener of this.activeListeners) {
-      listener(reportsList, hotspotsList, stats, rankedList);
+      listener(unifiedReports, hotspotsList, stats, rankedList);
     }
   }
 

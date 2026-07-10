@@ -142,7 +142,7 @@ export async function testCloudFirestoreConnection(): Promise<{ success: boolean
         detectedIssue: "Real-time Cloud Sync Verification Test",
         urgencyReasoning: "Verifying live bidirectional connection from People's Priorities dashboard to Google Cloud.",
         timestamp: "Just now",
-        location: { lat: 18.7083, lng: 82.8465, blockOrTown: "Semiliguda" },
+        location: { lat: 20.5937, lng: 78.9629, blockOrTown: "Verified Civic Locality" },
         isRealCloudItem: true,
         createdAt: serverTimestamp(),
       }),
@@ -223,7 +223,7 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
             photoBase64: data.photoBase64,
             intakeType: data.intakeType || (data.photoBase64 ? 'PHOTO' : 'TEXT'),
             timestamp: data.timestamp || 'Just now',
-            location: data.location || { lat: 18.7083, lng: 82.8465, blockOrTown: 'Semiliguda' },
+            location: data.location || { lat: 20.5937, lng: 78.9629, blockOrTown: 'Verified Civic Locality' },
             isRealCloudItem: true,
           });
         });

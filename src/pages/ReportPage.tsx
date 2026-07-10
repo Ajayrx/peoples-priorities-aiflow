@@ -28,7 +28,6 @@ interface ReportPageProps {
 }
 
 export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) => {
-  const isDemoRegion = region.constituency.includes('Koraput');
   const { submitReport } = useCitizenStore();
 
   // Intake mode: 'VOICE' | 'PHOTO' | 'TEXT'
@@ -40,9 +39,9 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
   // GPS Coordinates (simulated locking)
   const [gpsLocked, setGpsLocked] = useState<boolean>(true);
   const [coordinates, setCoordinates] = useState<{ lat: string; lng: string; locationName: string }>({
-    lat: '18.7083',
-    lng: '82.8465',
-    locationName: isDemoRegion ? 'Pottangi Road Ward 4, Semiliguda Block' : `${region.district} Verified GPS Hub`,
+    lat: '28.6517',
+    lng: '77.1906',
+    locationName: region.constituency === 'All India' ? 'Karol Bagh Zone, New Delhi PC' : `${region.district} Verified GPS Hub`,
   });
 
   // Voice recording state & real microphone capture refs
@@ -379,9 +378,9 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
       photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
       intakeType: intakeMode,
       location: {
-        lat: parseFloat(coordinates.lat) || 18.7083,
-        lng: parseFloat(coordinates.lng) || 82.8465,
-        blockOrTown: region.district,
+        lat: parseFloat(coordinates.lat) || 28.6517,
+        lng: parseFloat(coordinates.lng) || 77.1906,
+        blockOrTown: coordinates.locationName.split(',')[0] || region.district || 'Verified Civic Locality',
       },
     });
 
@@ -524,6 +523,38 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onNavigate }) =>
                 </div>
                 <div className="pt-1 border-t border-slate-200 text-slate-800 font-sans font-extrabold text-xs">
                   📍 {coordinates.locationName}
+                </div>
+              </div>
+
+              {/* Nationwide Quick-Lock Preset Cities */}
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-mono font-bold uppercase text-slate-500">Quick-Lock Preset Regions Across India:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'New Delhi', lat: '28.6517', lng: '77.1906', name: 'Karol Bagh Zone, New Delhi PC' },
+                    { label: 'Mumbai', lat: '19.1197', lng: '72.8464', name: 'Andheri West, Mumbai North West PC' },
+                    { label: 'Bengaluru', lat: '12.9698', lng: '77.7499', name: 'Whitefield Corridor, Bengaluru Central PC' },
+                    { label: 'Kolkata', lat: '22.5280', lng: '88.3654', name: 'Ballygunge Ward 68, Kolkata South PC' },
+                    { label: 'Varanasi', lat: '25.3176', lng: '82.9739', name: 'Cantt Area, Varanasi PC' },
+                    { label: 'Chennai', lat: '12.9815', lng: '80.2180', name: 'Velachery Zone, Chennai South PC' },
+                    { label: 'Patna', lat: '25.5941', lng: '85.1585', name: 'Kankarbagh Colony, Patna Sahib PC' },
+                    { label: 'Jaipur', lat: '26.8530', lng: '75.8119', name: 'Malviya Nagar Sector 4, Jaipur PC' },
+                    { label: 'Ahmedabad', lat: '23.0330', lng: '72.5050', name: 'SG Highway Thaltej, Ahmedabad West PC' },
+                    { label: 'Koraput', lat: '18.7083', lng: '82.8465', name: 'Semiliguda Block, Koraput PC' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setCoordinates({ lat: preset.lat, lng: preset.lng, locationName: preset.name })}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+                        coordinates.locationName.includes(preset.label) || coordinates.lat === preset.lat
+                          ? 'bg-teal-600 text-white border-teal-700 shadow-sm font-extrabold'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200/80'
+                      }`}
+                    >
+                      📍 {preset.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

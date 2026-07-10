@@ -6,8 +6,8 @@ interface NavbarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   isOnline?: boolean;
-  region: { state: string; district: string; constituency: string };
-  onSelectRegion: (region: { state: string; district: string; constituency: string }) => void;
+  region: { state: string; district: string; constituency: string; isAllIndia?: boolean };
+  onSelectRegion: (region: { state: string; district: string; constituency: string; isAllIndia?: boolean }) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({

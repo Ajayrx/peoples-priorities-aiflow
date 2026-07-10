@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -25,8 +25,8 @@ import {
   Download
 } from 'lucide-react';
 import type { Hotspot, Region } from '../types';
-import { MOCK_HOTSPOTS } from '../data/mockData';
 import { useCitizenStore } from '../context/CitizenStoreContext';
+import { runClusterEngine } from '../services/ClusterEngine';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
 function MapViewController({ center, zoom }: { center: [number, number]; zoom: number }) {
@@ -37,15 +37,88 @@ function MapViewController({ center, zoom }: { center: [number, number]; zoom: n
   return null;
 }
 
+const REGION_COORDS_MAP: Record<string, [number, number]> = {
+  'Hindupur PC': [13.8283, 77.4914],
+  'Anantapur PC': [14.6819, 77.6006],
+  'Koraput PC': [18.8135, 82.7125],
+  'Koraput PC (Demo Region)': [18.8135, 82.7125],
+  'Karol Bagh PC': [28.6517, 77.1906],
+  'New Delhi PC': [28.6139, 77.2090],
+  'Andheri West, Mumbai North West PC': [19.1197, 72.8464],
+  'Mumbai North West PC': [19.1197, 72.8464],
+  'Varanasi PC': [25.3176, 82.9739],
+  'Whitefield Corridor, Bengaluru Central PC': [12.9698, 77.7499],
+  'Bengaluru Central PC': [12.9716, 77.5946],
+  'Ballygunge, Kolkata South PC': [22.5280, 88.3654],
+  'Kolkata South PC': [22.5150, 88.3530],
+  'Velachery Zone, Chennai South PC': [12.9815, 80.2180],
+  'Chennai South PC': [13.0012, 80.2565],
+  'Kankarbagh Colony, Patna Sahib PC': [25.5941, 85.1585],
+  'Patna Sahib PC': [25.6000, 85.1800],
+  'Malviya Nagar Sector 4, Jaipur PC': [26.8530, 75.8119],
+  'Jaipur PC': [26.9124, 75.7873],
+  'SG Highway Thaltej, Ahmedabad West PC': [23.0330, 72.5050],
+  'Ahmedabad West PC': [23.0225, 72.5714],
+};
+
+const STATE_COORDS_MAP: Record<string, [number, number]> = {
+  'Andhra Pradesh': [15.9129, 79.7400],
+  'Arunachal Pradesh': [28.2180, 94.7278],
+  'Assam': [26.2006, 92.9376],
+  'Bihar': [25.0961, 85.3131],
+  'Chhattisgarh': [21.2787, 81.8661],
+  'Goa': [15.2993, 74.1240],
+  'Gujarat': [22.2587, 71.1924],
+  'Haryana': [29.0588, 76.0856],
+  'Himachal Pradesh': [31.1048, 77.1734],
+  'Jharkhand': [23.6102, 85.2799],
+  'Karnataka': [15.3173, 75.7139],
+  'Kerala': [10.8505, 76.2711],
+  'Madhya Pradesh': [22.9734, 78.6569],
+  'Maharashtra': [19.7515, 75.7139],
+  'Manipur': [24.6637, 93.9063],
+  'Meghalaya': [25.4670, 91.3662],
+  'Mizoram': [23.1645, 92.9376],
+  'Nagaland': [26.1584, 94.5624],
+  'Odisha': [20.9517, 85.0985],
+  'Punjab': [31.1471, 75.3412],
+  'Rajasthan': [27.0238, 74.2179],
+  'Sikkim': [27.5330, 88.5122],
+  'Tamil Nadu': [11.1271, 78.6569],
+  'Telangana': [18.1124, 79.0193],
+  'Tripura': [23.9408, 91.9882],
+  'Uttar Pradesh': [26.8467, 80.9462],
+  'Uttarakhand': [30.0668, 79.0193],
+  'West Bengal': [22.9868, 87.8550],
+  'Delhi': [28.6139, 77.2090],
+  'Chandigarh': [30.7333, 76.7794],
+  'All India': [20.5937, 78.9629],
+};
+
+function getRegionGeocode(region: Region): [number, number] {
+  const cleanPC = region.constituency.replace(' (Demo Region)', '').trim();
+  if (REGION_COORDS_MAP[cleanPC]) return REGION_COORDS_MAP[cleanPC];
+  if (REGION_COORDS_MAP[region.constituency]) return REGION_COORDS_MAP[region.constituency];
+  if (region.constituency.includes('Koraput')) return [18.8135, 82.7125];
+  if (region.constituency.includes('Mumbai')) return [19.1197, 72.8464];
+  if (region.constituency.includes('Bengaluru')) return [12.9716, 77.5946];
+  if (region.constituency.includes('Delhi')) return [28.6139, 77.2090];
+  if (region.constituency.includes('Kolkata')) return [22.5280, 88.3654];
+  if (region.constituency.includes('Chennai')) return [12.9815, 80.2180];
+  if (region.constituency.includes('Varanasi')) return [25.3176, 82.9739];
+  if (region.constituency.includes('Patna')) return [25.5941, 85.1585];
+  if (region.constituency.includes('Jaipur')) return [26.8530, 75.8119];
+  if (region.constituency.includes('Ahmedabad')) return [23.0330, 72.5050];
+  if (STATE_COORDS_MAP[region.state]) return STATE_COORDS_MAP[region.state];
+  return [20.5937, 78.9629];
+}
+
 interface ExplorePageProps {
   region: Region;
   onNavigate: (tab: string) => void;
 }
 
 export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) => {
-  // Check if active region is the seeded Koraput demo region
-  const isDemoRegion = region.constituency.includes('Koraput');
-
   // Active filter category ('ALL' or specific CategoryType)
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   
@@ -75,29 +148,70 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [mapStyle, setMapStyle] = useState<'streets' | 'satellite' | 'hybrid'>('streets');
 
   // Simulation state for Tab 6 ("What-If" Priority Mandate Simulator)
-  const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(3); // 1: Standard, 2: Expedited, 3: Emergency Mandate
+  const [simulatedUrgencyLevel, setSimulatedUrgencyLevel] = useState<number>(2); // 1=Standard, 2=Expedited, 3=Emergency
   const [simulatedPriorityDrop, setSimulatedPriorityDrop] = useState<number>(82); // score reduction
 
-  // Consume canonical single source of truth
-  const { hotspots } = useCitizenStore();
+  // Sidebar Tab Switcher between Clusters and Individual Citizen Complaints
+  const [activeListTab, setActiveListTab] = useState<'CLUSTERS' | 'REPORTS'>('CLUSTERS');
 
-  // Filter and sort hotspots (from canonical store)
+  // Consume canonical single source of truth
+  const { hotspots, reports } = useCitizenStore();
+
+  const { clusters: engineClusters, individualReports: _engineIndividualReports } = useMemo(() => {
+    return runClusterEngine(reports, hotspots);
+  }, [reports, hotspots]);
+
+  // Filter and sort hotspots (from canonical store / cluster engine)
   const filteredHotspots = useMemo(() => {
-    const baseList = hotspots.length > 0 ? hotspots : (isDemoRegion ? [...MOCK_HOTSPOTS] : []);
-    return baseList.filter((hs) => {
+    return engineClusters.filter((hs) => {
+      const matchesRegion =
+        region.isAllIndia || region.state === 'All India'
+          ? true
+          : hs.name.toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
+            hs.location.blockOrTown.toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
+            hs.location.blockOrTown.toLowerCase().includes(region.state.toLowerCase()) ||
+            (region.constituency.includes('Koraput') && hs.name.includes('Semiliguda'));
+
       const matchesCategory = selectedCategory === 'ALL' || hs.category === selectedCategory;
       const matchesSearch =
         hs.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         hs.location.blockOrTown.toLowerCase().includes(searchQuery.toLowerCase()) ||
         hs.category.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
+      return matchesRegion && matchesCategory && matchesSearch;
     }).sort((a, b) => b.priorityScore - a.priorityScore);
-  }, [isDemoRegion, selectedCategory, searchQuery, hotspots]);
+  }, [selectedCategory, searchQuery, engineClusters, region]);
 
+  // Filter and sort individual verified citizen reports (from canonical store)
+  const filteredReports = useMemo(() => {
+    return reports.filter((rep) => {
+      const matchesRegion =
+        region.isAllIndia || region.state === 'All India'
+          ? true
+          : (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(region.constituency.replace(' (Demo Region)', '').toLowerCase()) ||
+            (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(region.state.toLowerCase()) ||
+            (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').includes('Semiliguda'));
+
+      const matchesCategory = selectedCategory === 'ALL' || rep.category === selectedCategory;
+      const matchesSearch =
+        (rep.title || rep.detectedIssue || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rep.description || rep.rawText || rep.aiSummary || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesRegion && matchesCategory && matchesSearch;
+    });
+  }, [reports, selectedCategory, searchQuery, region]);
+
+  // Automatically switch tab in Spatial Demand Ledger if the viewed area has complaints but no clusters (or vice versa)
+  useEffect(() => {
+    if (filteredHotspots.length === 0 && filteredReports.length > 0 && activeListTab === 'CLUSTERS') {
+      setActiveListTab('REPORTS');
+    } else if (filteredHotspots.length > 0 && filteredReports.length === 0 && activeListTab === 'REPORTS') {
+      setActiveListTab('CLUSTERS');
+    }
+  }, [filteredHotspots.length, filteredReports.length, activeListTab, region.constituency]);
 
   // Categories list for quick filtering pills
   const categories: { id: string; label: string; count?: number }[] = [
-    { id: 'ALL', label: 'All Clusters', count: isDemoRegion ? filteredHotspots.length : 0 },
+    { id: 'ALL', label: activeListTab === 'CLUSTERS' ? 'All Clusters' : 'All Complaints', count: activeListTab === 'CLUSTERS' ? filteredHotspots.length : filteredReports.length },
     { id: 'Road', label: 'Roads & Bridges' },
     { id: 'Drainage', label: 'Urban Drainage' },
     { id: 'Healthcare', label: 'Healthcare' },
@@ -105,24 +219,40 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
     { id: 'Schools', label: 'Schools' },
   ];
 
-  // Map center coordinates based on active hotspot or default Koraput coordinate
+  // Map center coordinates based on active hotspot or constituency coordinates
   const mapCenter: [number, number] = useMemo(() => {
     if (activeHotspot) {
       return [activeHotspot.location.center.lat, activeHotspot.location.center.lng];
     }
-    if (isDemoRegion) {
-      return [18.8135, 82.7125]; // Koraput Town HQ
+    if (region.isAllIndia || region.state === 'All India') {
+      return [20.5937, 78.9629]; // All India Center
     }
-    return [20.9517, 85.0985]; // Default Odisha state center
-  }, [activeHotspot, isDemoRegion]);
+    if (filteredHotspots.length > 0) {
+      return [filteredHotspots[0].location.center.lat, filteredHotspots[0].location.center.lng];
+    }
+    return getRegionGeocode(region);
+  }, [activeHotspot, region, filteredHotspots]);
 
-  // Mock infrastructure points across Koraput PC to display when showInfrastructure is ON
+  // Infrastructure points across India to display when showInfrastructure is ON
   const infrastructurePoints = useMemo(() => [
-    { id: 'inf-1', name: 'Koraput District Hospital', type: 'HOSPITAL', lat: 18.8180, lng: 82.7150, status: 'Functional' },
-    { id: 'inf-2', name: 'Semiliguda Govt High School', type: 'SCHOOL', lat: 18.7120, lng: 82.8490, status: 'Needs Repair' },
-    { id: 'inf-3', name: 'Jeypore Municipal Overhead Tank', type: 'WATER', lat: 18.8590, lng: 82.5750, status: 'Functional' },
-    { id: 'inf-4', name: 'Sunabeda Sector 3 CHC', type: 'HOSPITAL', lat: 18.7280, lng: 82.8390, status: 'Needs Repair' },
-    { id: 'inf-5', name: 'Damanjodi JJM Water Treatment Plant', type: 'WATER', lat: 18.7790, lng: 82.8940, status: 'Functional' },
+    { id: 'inf-1', name: 'AIIMS New Delhi Medical Hub', type: 'HOSPITAL', lat: 28.5672, lng: 77.2100, status: 'Functional' },
+    { id: 'inf-2', name: 'KEM Hospital Mumbai Central', type: 'HOSPITAL', lat: 19.0025, lng: 72.8424, status: 'Functional' },
+    { id: 'inf-3', name: 'Victoria Hospital Bengaluru Urban', type: 'HOSPITAL', lat: 12.9634, lng: 77.5755, status: 'Functional' },
+    { id: 'inf-4', name: 'SSKM Government Medical College Kolkata', type: 'HOSPITAL', lat: 22.5392, lng: 88.3444, status: 'Needs Repair' },
+    { id: 'inf-5', name: 'Rajiv Gandhi Government General Hospital Chennai', type: 'HOSPITAL', lat: 13.0815, lng: 80.2785, status: 'Functional' },
+    { id: 'inf-6', name: 'Patna Medical College Hospital (PMCH)', type: 'HOSPITAL', lat: 25.6186, lng: 85.1661, status: 'Needs Repair' },
+    { id: 'inf-7', name: 'Varanasi Civil & Cantt Hospital', type: 'HOSPITAL', lat: 25.3210, lng: 82.9800, status: 'Needs Repair' },
+    { id: 'inf-8', name: 'Koraput District Main Hospital', type: 'HOSPITAL', lat: 18.8180, lng: 82.7150, status: 'Functional' },
+    { id: 'inf-9', name: 'Delhi Public & Municipal School Hub Karol Bagh', type: 'SCHOOL', lat: 28.6540, lng: 77.1920, status: 'Needs Repair' },
+    { id: 'inf-10', name: 'Andheri West Municipal Secondary School Mumbai', type: 'SCHOOL', lat: 19.1220, lng: 72.8480, status: 'Functional' },
+    { id: 'inf-11', name: 'Whitefield Government High School Bengaluru', type: 'SCHOOL', lat: 12.9710, lng: 77.7510, status: 'Needs Repair' },
+    { id: 'inf-12', name: 'Semiliguda Govt High School Koraput', type: 'SCHOOL', lat: 18.7120, lng: 82.8490, status: 'Needs Repair' },
+    { id: 'inf-13', name: 'Ballygunge Government High School Kolkata', type: 'SCHOOL', lat: 22.5290, lng: 88.3660, status: 'Functional' },
+    { id: 'inf-14', name: 'Delhi Jal Board WTP Prasad Nagar', type: 'WATER', lat: 28.6500, lng: 77.1890, status: 'Needs Repair' },
+    { id: 'inf-15', name: 'Brihanmumbai Stormwater Pumping Station Andheri', type: 'WATER', lat: 19.1170, lng: 72.8440, status: 'Needs Repair' },
+    { id: 'inf-16', name: 'BWSSB Overhead Water Reservoir Whitefield', type: 'WATER', lat: 12.9680, lng: 77.7480, status: 'Functional' },
+    { id: 'inf-17', name: 'Damanjodi JJM Water Treatment Plant Koraput', type: 'WATER', lat: 18.7790, lng: 82.8940, status: 'Functional' },
+    { id: 'inf-18', name: 'Velachery Sump & Storm Water Canal Chennai', type: 'WATER', lat: 12.9800, lng: 80.2160, status: 'Needs Repair' },
   ], []);
 
   // Helper colors based on priority level
@@ -203,7 +333,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             <div className="flex items-center justify-between gap-2 px-1">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-xs font-bold w-full justify-center shadow-2xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>{isDemoRegion ? `${filteredHotspots.length} Active AI Clusters Showing` : 'No Dataset Loaded'}</span>
+                <span>{filteredHotspots.length} Active Clusters • {filteredReports.length} Individual Demand Pins</span>
               </div>
             </div>
           </div>
@@ -240,7 +370,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             <div className="flex items-center gap-2 shrink-0">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-mono text-xs font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>{isDemoRegion ? `${filteredHotspots.length} Active AI Clusters` : 'No Dataset Loaded'}</span>
+                <span>{filteredHotspots.length} Active Clusters • {filteredReports.length} Pins</span>
               </div>
             </div>
           </div>
@@ -306,7 +436,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                   title="Toggle Individual Verified Citizen Inputs"
                 >
                   <span className={`w-2 h-2 rounded-full ${showCitizenReports ? 'bg-teal-500' : 'bg-slate-300'}`} />
-                  <span>Citizen Inputs</span>
+                  <span>Citizen Inputs ({filteredReports.length})</span>
                 </button>
 
                 <button
@@ -356,15 +486,14 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
             {/* Leaflet Cartographic Map Canvas */}
             <div className="flex-1 relative bg-slate-900 z-10">
-              {isDemoRegion ? (
-                <MapContainer
-                  center={mapCenter}
-                  zoom={11}
-                  style={{ height: '100%', width: '100%' }}
-                  scrollWheelZoom={true}
-                  className="z-10"
+              <MapContainer
+                center={mapCenter}
+                zoom={region.isAllIndia || region.state === 'All India' ? 5 : 11}
+                style={{ height: '100%', width: '100%' }}
+                scrollWheelZoom={true}
+                className="z-10"
                 >
-                  <MapViewController center={mapCenter} zoom={activeHotspot ? 13 : 11} />
+                  <MapViewController center={mapCenter} zoom={activeHotspot ? 13 : (region.isAllIndia || region.state === 'All India' ? 5 : 11)} />
 
                   {/* Dynamic Base Map Tiles (Streets vs Satellite vs Hybrid) */}
                   {mapStyle === 'streets' && (
@@ -506,24 +635,94 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                         </CircleMarker>
                       );
                     })}
+
+                  {/* 4. Individual Verified Citizen Inputs (Voice, Photo, Text Complaints) */}
+                  {showCitizenReports &&
+                    filteredReports.map((rep, idx) => {
+                      const baseLat = rep.location?.lat || rep.latitude || 18.8135;
+                      const baseLng = rep.location?.lng || rep.longitude || 82.7125;
+                      // Jitter dispersal so multiple complaints at the exact same block/cluster center never hide or stack
+                      const goldenAngle = idx * 2.39996; // Golden angle radian multiplier
+                      const dispersalRadius = 0.0035 + (idx % 4) * 0.0018; // ~380m to 750m dispersion
+                      const repLat = baseLat + Math.cos(goldenAngle) * dispersalRadius;
+                      const repLng = baseLng + Math.sin(goldenAngle) * dispersalRadius;
+
+                      const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.rawMediaUrl ? 'PHOTO' : 'TEXT');
+                      const pinColor = intakeMethod === 'VOICE' ? '#2563EB' : intakeMethod === 'PHOTO' ? '#9333EA' : '#0D9488';
+
+                      return (
+                        <CircleMarker
+                          key={`cit-rep-${rep.id}-${idx}`}
+                          center={[repLat, repLng]}
+                          radius={11}
+                          pathOptions={{
+                            fillColor: pinColor,
+                            color: '#FFFFFF',
+                            weight: 3,
+                            fillOpacity: 1,
+                          }}
+                        >
+                          <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+                            <div className="font-sans p-1 min-w-[180px]">
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[9px] font-mono font-black px-1.5 py-0.5 rounded bg-slate-900 text-white uppercase flex items-center gap-1">
+                                  <span>{intakeMethod === 'VOICE' ? '🎙️' : intakeMethod === 'PHOTO' ? '📸' : '📝'}</span>
+                                  <span>#{idx + 1} {intakeMethod}</span>
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">
+                                  {rep.category}
+                                </span>
+                              </div>
+                              <strong className="block text-xs font-extrabold text-slate-900 truncate">
+                                {rep.detectedIssue || rep.title || 'Verified Citizen Submission'}
+                              </strong>
+                              <span className="text-[10px] text-teal-700 font-bold block mt-0.5 truncate">
+                                📍 {rep.location?.blockOrTown || rep.address || 'Verified Civic Locality'}
+                              </span>
+                            </div>
+                          </Tooltip>
+
+                          <Popup className="custom-popup">
+                            <div className="p-2.5 max-w-[280px] font-sans text-slate-900 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-black bg-blue-100 text-blue-900 uppercase">
+                                  <span>{intakeMethod === 'VOICE' ? '🎙️ VOICE' : intakeMethod === 'PHOTO' ? '📸 PHOTO' : '📝 TEXT'} INTAKE</span>
+                                  <span>•</span>
+                                  <span>#{idx + 1}</span>
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-slate-500">
+                                  {rep.timestamp || rep.createdAt || 'Just now'}
+                                </span>
+                              </div>
+
+                              <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 leading-tight">
+                                {rep.detectedIssue || rep.title || 'Verified Citizen Civic Intake'}
+                              </h4>
+
+                              <div className="bg-slate-50 p-2 sm:p-2.5 rounded-xl border border-slate-200 text-xs italic text-slate-800 leading-relaxed font-serif">
+                                "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
+                              </div>
+
+                              {(rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                                <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 shadow-2xs">
+                                  <img
+                                    src={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                                    alt="Citizen upload"
+                                    className="w-full h-auto object-cover"
+                                  />
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 pt-1.5 border-t border-slate-100">
+                                <span>Category: <strong className="text-slate-800">{rep.category}</strong></span>
+                                <span>Loc: <strong className="text-slate-800">{rep.address || rep.location?.blockOrTown || 'Koraput PC'}</strong></span>
+                              </div>
+                            </div>
+                          </Popup>
+                        </CircleMarker>
+                      );
+                    })}
                 </MapContainer>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#FAFAFB]">
-                  <AlertCircle className="w-12 h-12 text-amber-500 mb-4 animate-bounce" />
-                  <h3 className="text-xl font-extrabold text-slate-900 mb-2">
-                    No Spatial Dataset Active for {region.constituency.replace(' (Demo Region)', '')}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 max-w-md mb-6 leading-relaxed font-medium">
-                    To interact with real DBSCAN clustering, multi-factor prioritization ($D \times S \times P \times G \times U \times C \times R \times \Phi$), and explainable AI drawers, please switch to our fully seeded Koraput PC demo canvas.
-                  </p>
-                  <button
-                    onClick={() => onNavigate('landing')}
-                    className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition-all flex items-center gap-2"
-                  >
-                    <span>Return & Select Koraput PC</span>
-                  </button>
-                </div>
-              )}
 
               {/* Floating Legend inside Map Canvas */}
               <div className="absolute bottom-4 left-4 z-[400] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3.5 shadow-xl max-w-xs pointer-events-auto">
@@ -531,19 +730,23 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                 <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-700">
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow-xs shrink-0" />
-                    <span>Critical Priority</span>
+                    <span>🔴 Critical Cluster</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded-full bg-emerald-600 border border-white shadow-xs shrink-0" />
-                    <span>High Priority</span>
+                    <span>🟠 High Cluster</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded-full bg-teal-600 border border-white shadow-xs shrink-0" />
-                    <span>Medium Priority</span>
+                    <span>🟡 Medium Cluster</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-slate-900 shrink-0" />
                     <span>Public Infra Point</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 col-span-2 pt-1 border-t border-slate-100">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-600 border border-white shadow-xs shrink-0" />
+                    <span>🟣 Individual Citizen Pins ({filteredReports.length})</span>
                   </div>
                 </div>
               </div>
@@ -561,26 +764,45 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
             </div>
           </div>
 
-          {/* RIGHT 35% (or 5 columns on Desktop): Ranked Hotspot Priority List */}
+          {/* RIGHT 35% (or 5 columns on Desktop): Ranked Hotspot Priority List / Citizen Complaints */}
           <div className="lg:col-span-5 bg-white rounded-[28px] border border-slate-200/90 shadow-xl p-4 sm:p-6 flex flex-col h-[600px] sm:h-[680px]">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
               <div>
-                <h3 className="font-extrabold text-base sm:text-lg text-slate-900">Ranked Priority List</h3>
-                <p className="text-xs text-slate-500 font-medium">Sorted by 8-Factor Engine Score</p>
+                <h3 className="font-extrabold text-base sm:text-lg text-slate-900">Spatial Demand Ledger</h3>
+                <p className="text-xs text-slate-500 font-medium">Synced with Dashboard • 100% Canonical Data</p>
               </div>
-              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-800 font-mono text-xs font-extrabold border border-slate-200">
-                {filteredHotspots.length} Clusters
-              </span>
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setActiveListTab('CLUSTERS')}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-extrabold transition-all ${
+                    activeListTab === 'CLUSTERS'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Clusters ({filteredHotspots.length})
+                </button>
+                <button
+                  onClick={() => setActiveListTab('REPORTS')}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-extrabold transition-all ${
+                    activeListTab === 'REPORTS'
+                      ? 'bg-white text-teal-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Complaints ({filteredReports.length})
+                </button>
+              </div>
             </div>
 
             {/* Search filter inside list */}
-            <div className="mb-4 relative">
+            <div className="mb-3 relative">
               <input
                 type="text"
-                placeholder="Search cluster, location, category..."
+                placeholder={activeListTab === 'CLUSTERS' ? 'Search cluster, block, category...' : 'Search complaint text, voice quote, issue...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 font-medium"
+                className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 font-medium"
               />
               {searchQuery && (
                 <button onClick={() => setSearchQuery('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
@@ -589,70 +811,187 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               )}
             </div>
 
-            {/* Scrollable Hotspot Cards List */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {isDemoRegion && filteredHotspots.length > 0 ? (
-                filteredHotspots.map((hs, idx) => {
-                  const isSelected = activeHotspot?.id === hs.id;
-                  return (
-                    <div
-                      key={hs.id}
-                      onClick={() => handleSelectHotspot(hs)}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
-                        isSelected
-                          ? 'bg-teal-50/90 border-teal-500 shadow-md ring-1 ring-teal-500/30'
-                          : 'bg-[#FAFAFB] hover:bg-slate-50/80 border-slate-200/80'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-black flex items-center justify-center shrink-0">
-                              #{idx + 1}
-                            </span>
-                            <span className="font-extrabold text-sm text-slate-900 truncate">
-                              {hs.name}
-                            </span>
+            {/* Scrollable Hotspot Cards or Citizen Complaints List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-w-0">
+              {activeListTab === 'CLUSTERS' ? (
+                filteredHotspots.length > 0 ? (
+                  filteredHotspots.map((hs, idx) => {
+                    const isSelected = activeHotspot?.id === hs.id;
+                    return (
+                      <div
+                        key={hs.id}
+                        onClick={() => handleSelectHotspot(hs)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer relative ${
+                          isSelected
+                            ? 'bg-teal-50/90 border-teal-500 shadow-md ring-1 ring-teal-500/30'
+                            : 'bg-[#FAFAFB] hover:bg-slate-50/80 border-slate-200/80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2 min-w-0">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1 min-w-0">
+                              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-mono text-[10px] font-black flex items-center justify-center shrink-0">
+                                #{idx + 1}
+                              </span>
+                              <span className="font-extrabold text-sm text-slate-900 truncate">
+                                {hs.name}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 font-medium truncate">
+                              {hs.location.blockOrTown} • <strong className="text-slate-700">{hs.category}</strong>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 font-medium">
-                            {hs.location.blockOrTown} • <strong className="text-slate-700">{hs.category}</strong>
+
+                          <div className="text-right shrink-0">
+                            <div className={`text-xl font-mono font-black ${hs.priorityScore >= 80 ? 'text-amber-600' : 'text-teal-700'}`}>
+                              {hs.priorityScore}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400 uppercase">Score</div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <div className={`text-xl font-mono font-black ${hs.priorityScore >= 80 ? 'text-amber-600' : 'text-teal-700'}`}>
-                            {hs.priorityScore}
-                          </div>
-                          <div className="text-[10px] font-mono text-slate-400 uppercase">Score</div>
+                        <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3 font-medium">
+                          {hs.aiSynthesis?.headline || hs.aiSynthesis?.reasoning}
+                        </p>
+
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 border-t border-slate-200/60 pt-2.5">
+                          <span>{hs.metrics.citizenReportCount} Reports • {hs.metrics.impactedPopulation.toLocaleString()} Pop</span>
+                          <span className="text-teal-700 font-bold flex items-center gap-0.5">
+                            Inspect Drawer <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
                         </div>
                       </div>
-
-                      <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3 font-medium">
-                        {hs.aiSynthesis.headline}
-                      </p>
-
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 border-t border-slate-200/60 pt-2.5">
-                        <span>{hs.metrics.citizenReportCount} Reports • {hs.metrics.impactedPopulation.toLocaleString()} Pop</span>
-                        <span className="text-teal-700 font-bold flex items-center gap-0.5">
-                          Inspect Drawer <ChevronRight className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-12 px-4 space-y-3 bg-slate-50/70 rounded-2xl border border-slate-200/80 my-2">
+                    <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center mx-auto text-teal-600 shadow-xs">
+                      <Activity className="w-5 h-5" />
                     </div>
-                  );
-                })
+                    <div className="font-extrabold text-slate-800 text-sm">
+                      No active density clusters in {region.constituency.replace(' (Demo Region)', '')}
+                    </div>
+                    {filteredReports.length > 0 ? (
+                      <div className="space-y-3 pt-1">
+                        <p className="text-xs text-teal-900 font-bold max-w-xs mx-auto bg-teal-50 p-3 rounded-xl border border-teal-200">
+                          Found <strong className="text-teal-700 font-black">{filteredReports.length} verified citizen complaints</strong> in this exact area!
+                        </p>
+                        <button
+                          onClick={() => setActiveListTab('REPORTS')}
+                          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 mx-auto"
+                        >
+                          <span>Show {filteredReports.length} Complaints in Ledger</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xs mx-auto">
+                          The interactive GIS cartographic canvas is live and centered on {region.constituency.replace(' (Demo Region)', '')} ({region.state}). Submit citizen intakes to form spatial clusters!
+                        </p>
+                        <button onClick={() => { setSelectedCategory('ALL'); setSearchQuery(''); }} className="text-xs text-teal-600 hover:underline font-bold">
+                          Reset filter preferences
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
               ) : (
-                <div className="text-center py-16 px-4 space-y-3">
-                  <Activity className="w-10 h-10 text-slate-300 mx-auto" />
-                  <div className="font-bold text-slate-700 text-sm">No clusters found matching filter</div>
-                  <button onClick={() => { setSelectedCategory('ALL'); setSearchQuery(''); }} className="text-xs text-teal-600 hover:underline font-bold">
-                    Reset all filters
-                  </button>
-                </div>
+                /* Individual Citizen Complaints Tab */
+                filteredReports.length > 0 ? (
+                  filteredReports.map((rep, idx) => {
+                    const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.rawMediaUrl ? 'PHOTO' : 'TEXT');
+                    const badgeColor =
+                      intakeMethod === 'VOICE'
+                        ? 'bg-blue-100 text-blue-800 border-blue-200'
+                        : intakeMethod === 'PHOTO'
+                        ? 'bg-purple-100 text-purple-800 border-purple-200'
+                        : 'bg-sky-100 text-sky-800 border-sky-200';
+
+                    return (
+                      <div
+                        key={`side-cit-${rep.id}-${idx}`}
+                        className="p-3.5 rounded-2xl bg-white border border-slate-200/80 hover:border-teal-500/60 shadow-xs hover:shadow-md transition-all space-y-2 min-w-0"
+                      >
+                        <div className="flex items-start justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${badgeColor}`}>
+                              {intakeMethod}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {rep.category}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                            {rep.timestamp || rep.createdAt || 'Just now'}
+                          </span>
+                        </div>
+
+                        <h4 className="font-extrabold text-xs text-slate-900 leading-tight break-words">
+                          {rep.detectedIssue || rep.title || 'Verified Citizen Civic Intake'}
+                        </h4>
+
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70 text-xs italic text-slate-700 font-serif leading-relaxed break-words">
+                          "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
+                        </div>
+
+                        {(rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                          <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 mt-1">
+                            <img
+                              src={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                              alt="Citizen evidence"
+                              className="w-full h-auto object-cover"
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 pt-2 border-t border-slate-100">
+                          <span className="truncate">📍 {rep.address || rep.location?.blockOrTown || 'Verified Civic Locality'}</span>
+                          <span className="text-teal-700 font-bold shrink-0">Verified Sample #{idx + 1}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-12 px-4 space-y-3 bg-slate-50/70 rounded-2xl border border-slate-200/80 my-2">
+                    <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center mx-auto text-teal-600 shadow-xs">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div className="font-extrabold text-slate-800 text-sm">
+                      No individual reports in {region.constituency.replace(' (Demo Region)', '')}
+                    </div>
+                    {filteredHotspots.length > 0 ? (
+                      <div className="space-y-3 pt-1">
+                        <p className="text-xs text-teal-900 font-bold max-w-xs mx-auto bg-teal-50 p-3 rounded-xl border border-teal-200">
+                          Found <strong className="text-teal-700 font-black">{filteredHotspots.length} density cluster{filteredHotspots.length > 1 ? 's' : ''}</strong> in this exact area!
+                        </p>
+                        <button
+                          onClick={() => setActiveListTab('CLUSTERS')}
+                          className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 mx-auto"
+                        >
+                          <span>Show {filteredHotspots.length} Clusters in Ledger</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xs mx-auto">
+                          Be the first to submit a verified voice note, photo, or text report from {region.constituency.replace(' (Demo Region)', '')} ({region.state}) to appear live on the map!
+                        </p>
+                        <button onClick={() => { setSelectedCategory('ALL'); setSearchQuery(''); }} className="text-xs text-teal-600 hover:underline font-bold">
+                          Reset filter preferences
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
               )}
             </div>
 
             <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-400 text-center font-mono">
-              Click any cluster card above to launch the 7-Tab Explainable AI Drawer
+              {activeListTab === 'CLUSTERS'
+                ? 'Click any cluster card above to launch the 7-Tab Explainable AI Drawer'
+                : 'Showing every verified citizen voice, photo & text submission on the GIS map'}
             </div>
           </div>
         </div>

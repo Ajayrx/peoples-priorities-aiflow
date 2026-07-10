@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Globe, MapPin, CheckCircle2, AlertCircle, ArrowRight, Navigation, Loader2 } from 'lucide-react';
+import { X, Globe, MapPin, CheckCircle2, Navigation, Loader2 } from 'lucide-react';
 import { ALL_INDIA_STATES } from '../data/constituencyData';
 import { SearchableDropdown } from './SearchableDropdown';
 
@@ -10,8 +10,9 @@ interface ConstituencySelectorModalProps {
     state: string;
     district: string;
     constituency: string;
+    isAllIndia?: boolean;
   };
-  onSelectRegion: (region: { state: string; district: string; constituency: string }) => void;
+  onSelectRegion: (region: { state: string; district: string; constituency: string; isAllIndia?: boolean }) => void;
 }
 
 export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps> = ({
@@ -48,10 +49,12 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
 
   const handleApply = () => {
     const cleanPC = selectedConstituency.replace(' (Demo Region)', '');
+    const isAll = selectedState === 'All India' || selectedConstituency.includes('All India');
     onSelectRegion({
       state: selectedState,
       district: selectedDistrict,
       constituency: cleanPC,
+      isAllIndia: isAll,
     });
     onClose();
   };
@@ -69,15 +72,16 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
     }, 900);
   };
 
-  const currentStateObj = ALL_INDIA_STATES.find(s => s.name === selectedState) || ALL_INDIA_STATES[0];
+  const currentStateObj = ALL_INDIA_STATES.find(s => s.name === selectedState) || {
+    name: 'All India',
+    districts: [{ name: 'Nationwide', constituencies: ['All India (Nationwide View)'] }]
+  };
   const currentDistrictsList = currentStateObj.districts;
   const currentDistrictObj = currentDistrictsList.find(d => d.name === selectedDistrict) || currentDistrictsList[0];
   const currentPCList = currentDistrictObj?.constituencies || [`${selectedDistrict} PC`];
+  const allStatesOptions = ['All India', ...ALL_INDIA_STATES.map(s => s.name)];
 
-  const isDemoRegionSelected = 
-    selectedState === 'Odisha' && 
-    selectedDistrict === 'Koraput District' && 
-    selectedConstituency.includes('Koraput PC');
+  const isAllIndiaSelected = selectedState === 'All India' || selectedConstituency.includes('All India');
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 animate-fadeIn select-none">
@@ -136,17 +140,22 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
               <SearchableDropdown
                 label="1. State / UT"
                 value={selectedState}
-                options={ALL_INDIA_STATES.map(s => s.name)}
-                placeholder="Search state (e.g. Odisha)..."
-                badgeText={(opt) => (opt === 'Odisha' ? '★ Dataset Available' : null)}
+                options={allStatesOptions}
+                placeholder="Search state (e.g. All India, Odisha)..."
+                badgeText={(opt) => (opt === 'All India' ? '★ Nationwide View' : opt === 'Odisha' ? '★ Verified Dataset' : null)}
                 onOpenChange={(open) => setOpenDropdown(open ? 'state' : null)}
                 onChange={(newState) => {
                   setSelectedState(newState);
-                  const stateObj = ALL_INDIA_STATES.find(s => s.name === newState);
-                  const firstDist = stateObj?.districts[0]?.name || 'District HQ';
-                  setSelectedDistrict(firstDist);
-                  const firstPC = stateObj?.districts[0]?.constituencies[0] || `${firstDist} PC`;
-                  setSelectedConstituency(firstPC);
+                  if (newState === 'All India') {
+                    setSelectedDistrict('Nationwide');
+                    setSelectedConstituency('All India (Nationwide View)');
+                  } else {
+                    const stateObj = ALL_INDIA_STATES.find(s => s.name === newState);
+                    const firstDist = stateObj?.districts[0]?.name || 'District HQ';
+                    setSelectedDistrict(firstDist);
+                    const firstPC = stateObj?.districts[0]?.constituencies[0] || `${firstDist} PC`;
+                    setSelectedConstituency(firstPC);
+                  }
                 }}
               />
             </div>
@@ -175,7 +184,7 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
                 value={selectedConstituency}
                 options={currentPCList}
                 placeholder="Search constituency..."
-                badgeText={(opt) => (opt.includes('Koraput PC') ? 'Dataset Available' : null)}
+                badgeText={(opt) => (opt.includes('All India') ? 'Nationwide' : opt.includes('Koraput PC') ? 'Dataset Available' : null)}
                 onOpenChange={(open) => setOpenDropdown(open ? 'constituency' : null)}
                 onChange={(newPC) => setSelectedConstituency(newPC)}
               />
@@ -186,41 +195,31 @@ export const ConstituencySelectorModal: React.FC<ConstituencySelectorModalProps>
           <div className={`transition-all duration-300 transform ${
             openDropdown ? 'opacity-25 blur-[3px] scale-[0.98] pointer-events-none' : 'opacity-100 blur-0 scale-100'
           }`}>
-            {isDemoRegionSelected ? (
-              <div className="p-4 sm:p-5 rounded-3xl bg-emerald-50 border border-emerald-300 flex items-start gap-3.5 shadow-sm">
+            <div className="p-4 sm:p-5 rounded-3xl bg-emerald-50 border border-emerald-300 flex items-start justify-between gap-3.5 shadow-sm">
+              <div className="flex items-start gap-3.5">
                 <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="space-y-1 text-slate-800">
                   <h4 className="font-extrabold text-xs sm:text-sm text-emerald-900">
-                    Dataset Available &amp; Active
+                    Nationwide Real-Time GIS Clustering Active ({selectedConstituency})
                   </h4>
                   <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
-                    Full dataset loaded for <strong>Odisha → Koraput PC</strong> (`Semiliguda`, `Damanjodi`). Includes <strong>verified community intakes, active hotspots, and real-time multi-factor scoring</strong>.
+                    All-India density + proximity clustering engine is active. Every verified report dynamically forms hierarchical clusters or monitors as a live 🟣 individual demand pin.
                   </p>
                 </div>
               </div>
-            ) : (
-              <div className="p-4 sm:p-5 rounded-3xl bg-amber-50 border border-amber-300 flex items-start gap-3.5 shadow-sm">
-                <AlertCircle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-2 text-slate-800">
-                  <h4 className="font-extrabold text-xs sm:text-sm text-amber-900">
-                    No Dataset Loaded for {selectedConstituency}
-                  </h4>
-                  <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed font-medium">
-                    To prevent browser memory overloads across 543 PCs, real-time intelligence is seeded exclusively for <strong>Odisha → Koraput PC</strong>.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSelectedState('Odisha');
-                      setSelectedDistrict('Koraput District');
-                      setSelectedConstituency('Koraput PC (Demo Region)');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold transition-colors shadow-sm"
-                  >
-                    Switch to Koraput (Dataset Available) <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+              {!isAllIndiaSelected && (
+                <button
+                  onClick={() => {
+                    setSelectedState('All India');
+                    setSelectedDistrict('Nationwide');
+                    setSelectedConstituency('All India (Nationwide View)');
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-colors shadow-sm"
+                >
+                  <Globe className="w-3.5 h-3.5" /> Switch to All India
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
