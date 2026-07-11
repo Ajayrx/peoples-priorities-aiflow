@@ -89,18 +89,34 @@ Respond ONLY with a valid JSON object matching this exact schema:
   "confidenceScore": number (85 to 98)
 }`;
 
-  // 1. Try Gemini Multimodal Audio API if key is valid and base64Audio is available
-  if (hasValidGeminiKey() && config.geminiApiKey && base64Audio.length > 0) {
+  // If Gemini API Key is completely missing or invalid, fail fast with a very clear message
+  if (!hasValidGeminiKey() || !config.geminiApiKey || config.geminiApiKey.trim().length <= 10) {
+    return {
+      englishTranscript: '',
+      category: 'Road',
+      detectedIssue: 'Missing Gemini API Key',
+      priorityLevel: 'MEDIUM',
+      confidenceScore: 0,
+      isRealApiEval: false,
+      error: 'Gemini API Key is missing or invalid. Please click Cloud Settings (top right gear icon) and paste your Gemini API Key, or verify VITE_GEMINI_API_KEY in Vercel.',
+    };
+  }
+
+  // 1. Try Gemini Multimodal Audio API (upload audio via inlineData)
+  let lastStatus = 0;
+  let lastErrText = '';
+
+  if (base64Audio.length > 0) {
     const modelsToTry = [
       'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-2.0-flash-exp',
       'gemini-1.5-pro',
+      'gemini-2.0-flash-exp',
+      'gemini-1.5-flash-latest',
     ];
 
     for (const modelName of modelsToTry) {
       try {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiApiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.geminiApiKey.trim()}`;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -178,10 +194,12 @@ Respond ONLY with a valid JSON object matching this exact schema:
             }
           }
         } else {
-          const errText = await response.text().catch(() => '');
-          console.warn(`Gemini Audio model ${modelName} returned status ${response.status}:`, errText);
+          lastStatus = response.status;
+          lastErrText = await response.text().catch(() => '');
+          console.warn(`Gemini Audio model ${modelName} returned status ${response.status}:`, lastErrText);
         }
-      } catch (err) {
+      } catch (err: any) {
+        lastErrText = err?.message || 'Network fetch error';
         console.warn(`Network error trying Gemini Audio model ${modelName}:`, err);
       }
     }
@@ -192,7 +210,7 @@ Respond ONLY with a valid JSON object matching this exact schema:
     // If we have Gemini API key, use text-only model to translate and categorize the recognized words
     if (hasValidGeminiKey() && config.geminiApiKey) {
       try {
-        const textEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`;
+        const textEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey.trim()}`;
         const textPrompt = `A citizen recorded a voice grievance. Preliminary speech recognition recognized this text in ${selectedLanguage}: "${fallbackText.trim()}"
 Translate this faithfully into clean, natural English complaint text. Then categorize into ONE of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity". Provide a 3-6 word title ("detectedIssue") and priority ("CRITICAL", "HIGH", or "MEDIUM").
 Respond ONLY with JSON:
@@ -255,7 +273,20 @@ Respond ONLY with JSON:
     };
   }
 
-  // 3. If zero speech was captured by browser AND audio processing via Gemini failed/missing API key
+  // 3. Construct specific actionable error message based on exact failure reason
+  let specificError = 'Audio processing failed: Unable to connect to Gemini Audio API. Please verify your Gemini API key in Cloud Settings and try recording again.';
+  if (lastStatus === 403) {
+    specificError = 'Gemini API Key authorization failed (403 Forbidden). Please verify in Google Cloud Console / AI Studio that your API key is active and Generative Language API is enabled.';
+  } else if (lastStatus === 429) {
+    specificError = 'Gemini API Rate Limit hit (429 Too Many Requests). Free tier quota temporarily exceeded. Please wait 10 seconds and try recording again, or enter a paid API key.';
+  } else if (lastStatus === 400) {
+    specificError = `Gemini Audio Processing Error (400 Bad Request): ${lastErrText.slice(0, 150) || 'Invalid audio encoding'}.`;
+  } else if (lastStatus === 404) {
+    specificError = `Gemini Audio model endpoint not found (404): ${lastErrText.slice(0, 120)}`;
+  } else if (lastErrText) {
+    specificError = `Gemini Audio Processing Error (${lastStatus || 'Network'}): ${lastErrText.slice(0, 150)}`;
+  }
+
   return {
     englishTranscript: '',
     category: 'Road',
@@ -263,6 +294,6 @@ Respond ONLY with JSON:
     priorityLevel: 'MEDIUM',
     confidenceScore: 0,
     isRealApiEval: false,
-    error: 'Audio processing failed: Unable to connect to Gemini Audio API. Please verify your Gemini API key in Cloud Settings and try recording again.',
+    error: specificError,
   };
 }

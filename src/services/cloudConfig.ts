@@ -44,7 +44,7 @@ export function getCloudConfig(): CloudConfigState {
     console.warn('Failed to parse cloud config from storage', e);
   }
 
-  const geminiApiKey = savedConfig.geminiApiKey || envGeminiKey;
+  const geminiApiKey = (savedConfig.geminiApiKey && savedConfig.geminiApiKey.trim() !== '' ? savedConfig.geminiApiKey.trim() : envGeminiKey) || '';
   const projectId = savedConfig.firebaseConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultFirebase.projectId;
   const firebaseConfig: FirebaseConfig = {
     apiKey: savedConfig.firebaseConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || defaultFirebase.apiKey,
