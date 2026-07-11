@@ -117,6 +117,7 @@ export interface Hotspot {
   } | null;
   priorityLevel: PriorityLevel;
   priorityScore: number; // 0-100
+  dynamicScore?: number; // Optional dynamic priority score from live engine
   priorityBreakdown: PriorityBreakdown;
   aiSynthesis: {
     headline: string;

@@ -94,7 +94,7 @@ const translations: Record<AppLanguage, Record<string, string>> = {
     'explore.searchPlaceholder': 'Search locations or descriptions...',
     'explore.filterTitle': 'Filter by Category',
     'explore.canvas': 'ACTIVE CANVAS',
-    'explore.spatialLedger': 'Spatial Demand Ledger',
+    'explore.spatialLedger': 'Demand Cluster List',
     'explore.synced': 'Synced with Dashboard • 100% Canonical Data',
     'explore.clusters': 'Clusters',
     'explore.complaints': 'Complaints',

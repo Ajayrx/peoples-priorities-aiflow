@@ -80,7 +80,7 @@ export function saveCloudConfig(config: CloudConfigState): void {
 
 export function hasValidGeminiKey(): boolean {
   const config = getCloudConfig();
-  return Boolean(config.geminiApiKey && config.geminiApiKey.length > 15 && config.geminiApiKey.startsWith('AIza'));
+  return Boolean(config.geminiApiKey && config.geminiApiKey.trim().length > 10);
 }
 
 export function hasValidFirebaseConfig(): boolean {

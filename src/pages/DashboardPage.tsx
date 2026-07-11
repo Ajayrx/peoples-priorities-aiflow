@@ -1,15 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import {
   Sliders,
-  UserCheck,
   RefreshCw,
   ArrowRight,
   Sparkles,
   Users,
   TrendingUp,
-  CheckCircle2
+  CheckCircle2,
+  Boxes,
+  ArrowLeft
 } from 'lucide-react';
-import type { Region, UserRole } from '../types';
+import type { Region, Hotspot, CitizenReport } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
 import { useLanguage } from '../context/LanguageContext';
@@ -21,8 +22,6 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate }) => {
   const { t } = useLanguage();
-  // Active User Role Viewport Switcher
-  const [activeRole, setActiveRole] = useState<UserRole>('MP');
 
   // Multi-Factor Priority Formula Weight Calibration Sliders
   const [demandWeight, setDemandWeight] = useState<number>(1.5);
@@ -32,6 +31,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
 
   // Category filter comparison state: 'ALL' | 'Roads' | 'Schools' | 'Water' | 'Healthcare' | 'Drainage'
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [showClustersView, setShowClustersView] = useState<boolean>(false);
 
   // Consume canonical single source of truth
   const { hotspots, reports } = useCitizenStore();
@@ -114,13 +114,186 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
     return { critical, high, medium };
   }, [dynamicHotspots]);
 
-  const rolesList: { id: UserRole; label: string; icon: string; desc: string }[] = useMemo(() => [
-    { id: 'MP', label: t('dashboard.role.mp'), icon: '🏛️', desc: t('dashboard.roleDesc') },
-    { id: 'DISTRICT_OFFICER', label: t('dashboard.role.collector'), icon: '🧑‍💼', desc: t('dashboard.roleDesc') },
-    { id: 'CITIZEN', label: t('nav.home') === 'Home' ? 'Citizen Transparency Portal' : t('nav.home') === 'होम' ? 'नागरिक पारदर्शिता पोर्टल' : t('nav.home') === 'ହୋମ' ? 'ନାଗରିକ ସ୍ୱଚ୍ଛତା ପୋର୍ଟାଲ' : 'పౌర పారదర్శకత పోర్టల్', icon: '🧑‍🤝‍🧑', desc: t('dashboard.roleDesc') },
-    { id: 'VOLUNTEER', label: t('nav.home') === 'Home' ? 'Field Verifier / Volunteer' : t('nav.home') === 'होम' ? 'क्षेत्र सत्यापनकर्ता / स्वयंसेवक' : t('nav.home') === 'ହୋମ' ? 'କ୍ଷେତ୍ର ଯାଞ୍ਚକାରୀ / ସ୍ୱେଚ୍ଛାସेବୀ' : 'ఫీల్డ్ వెరిఫైయర్ / వాలంటీర్', icon: '🙋', desc: t('dashboard.roleDesc') },
-    { id: 'ADMIN', label: t('nav.admin'), icon: '⚙️', desc: t('dashboard.roleDesc') },
-  ], [t]);
+  const renderClusterCard = (hs: Hotspot) => {
+    const priorityText = hs.priorityLevel === 'CRITICAL'
+      ? 'Critical Priority'
+      : hs.priorityLevel === 'HIGH'
+      ? 'High Priority'
+      : hs.priorityLevel === 'MEDIUM'
+      ? 'Medium Priority'
+      : 'Low Priority';
+
+    const priorityBadgeColor = hs.priorityLevel === 'CRITICAL'
+      ? 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold'
+      : hs.priorityLevel === 'HIGH'
+      ? 'bg-amber-100 text-amber-800 border-amber-300 font-extrabold'
+      : hs.priorityLevel === 'MEDIUM'
+      ? 'bg-blue-100 text-blue-800 border-blue-300 font-bold'
+      : 'bg-slate-100 text-slate-800 border-slate-300 font-bold';
+
+    const reportCount = hs.metrics?.citizenReportCount || hs.recentReports?.length || 0;
+    const summary = hs.aiSynthesis?.reasoning || hs.aiSynthesis?.headline || hs.name || 'Recurring civic demand in this area';
+
+    return (
+      <div
+        key={hs.id}
+        className="bg-white border-2 border-teal-500/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm hover:shadow-md transition-all min-w-0 w-full overflow-hidden"
+      >
+        <div className="flex items-start gap-3 min-w-0 flex-1 w-full">
+          <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 font-bold shadow-xs">
+            <Boxes className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1 w-full space-y-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="px-1.5 py-0.5 rounded-md bg-teal-800 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
+                  📦 DEMAND CLUSTER
+                </span>
+                <span className="font-extrabold text-sm sm:text-base text-slate-900 truncate min-w-0">
+                  {hs.category}
+                </span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] border uppercase tracking-wide shrink-0 ${priorityBadgeColor}`}>
+                {priorityText}
+              </span>
+            </div>
+            <div className="text-xs sm:text-sm font-bold text-slate-700 truncate min-w-0">
+              📍 {hs.location.blockOrTown || hs.name}
+            </div>
+            <div className="text-xs font-mono font-extrabold text-teal-700 bg-teal-50/80 px-2 py-0.5 rounded-md inline-block border border-teal-200/60">
+              {reportCount} grouped citizen reports
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed pt-0.5 break-words line-clamp-2">
+              {summary}
+            </p>
+          </div>
+        </div>
+        <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-2 sm:pt-0 border-t border-slate-100 sm:border-0 gap-1.5">
+          <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-mono text-xs font-black shadow-2xs block shrink-0">
+            Score: {hs.dynamicScore || hs.priorityScore}/100
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderReportCard = (rep: CitizenReport) => {
+    if (rep.inputMethod === 'VOICE' || (rep as any).intakeType === 'VOICE') {
+      return (
+        <div key={rep.id} className="bg-teal-50/90 border border-teal-300 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs min-w-0 w-full overflow-hidden">
+          <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1 w-full">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm font-bold text-base sm:text-lg">
+              🎙️
+            </div>
+            <div className="min-w-0 flex-1 w-full">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
+                <span className="px-1.5 py-0.5 rounded-md bg-teal-600 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
+                  VOICE COMPLAINT
+                </span>
+                <strong
+                  className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-2 min-w-0 leading-tight"
+                  style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+                >
+                  {rep.location.blockOrTown} • {rep.category}
+                </strong>
+              </div>
+              <p
+                className="text-xs sm:text-sm font-serif italic text-slate-900 leading-relaxed bg-white/80 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-teal-200/80 break-words line-clamp-2 min-w-0"
+                style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+              >
+                "{rep.rawText || rep.aiProcessing?.transcription || rep.aiProcessing?.aiSummary || 'Verified spoken civic report.'}"
+              </p>
+              <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+                <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+                <span className="font-bold text-teal-800">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-teal-200/60 sm:border-0 gap-2">
+            <span className="px-2 py-1 rounded-lg bg-white border border-teal-200 font-mono text-[11px] sm:text-xs font-black text-teal-800 shadow-2xs block shrink-0">
+              Score: {rep.aiProcessing?.aiConfidenceScore || 94}/100
+            </span>
+          </div>
+        </div>
+      );
+    } else if (rep.inputMethod === 'PHOTO' || rep.rawMediaUrl || (rep as any).intakeType === 'PHOTO') {
+      return (
+        <div key={rep.id} className="bg-emerald-50/80 border border-emerald-300 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start gap-3 sm:gap-4 shadow-2xs min-w-0 w-full overflow-hidden">
+          {rep.rawMediaUrl && (
+            <img src={rep.rawMediaUrl} alt="Reported defect" className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-xl border-2 border-emerald-400 shadow-sm shrink-0" />
+          )}
+          <div className="min-w-0 flex-1 w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <span className="px-1.5 py-0.5 rounded-md bg-emerald-700 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
+                  📸 PHOTO EVIDENCE
+                </span>
+                <strong
+                  className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-1 min-w-0"
+                  style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+                >
+                  {rep.location.blockOrTown} • {rep.category}
+                </strong>
+              </div>
+            </div>
+            <p
+              className="text-xs sm:text-sm text-slate-700 leading-relaxed font-medium bg-white/80 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200/80 break-words line-clamp-2 min-w-0 mt-1"
+              style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+            >
+              {rep.urgencyReasoning || rep.description || rep.rawText || 'Visual citizen complaint submitted.'}
+            </p>
+            <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+              <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+              <span className="font-bold text-slate-700">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
+            </div>
+          </div>
+          <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-slate-200 sm:border-0 gap-2">
+            <span className="px-2 py-1 rounded-lg bg-white border border-slate-300 font-mono text-[11px] sm:text-xs font-black text-slate-800 shadow-2xs block shrink-0">
+              Score: {rep.aiProcessing?.aiConfidenceScore || 93}/100
+            </span>
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div key={rep.id} className="bg-slate-50 border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs min-w-0 w-full overflow-hidden">
+          <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1 w-full">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 shadow-2xs font-bold text-base sm:text-lg">
+              📝
+            </div>
+            <div className="min-w-0 flex-1 w-full">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
+                <span className="px-1.5 py-0.5 rounded-md bg-slate-700 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
+                  TEXT INTAKE
+                </span>
+                <strong
+                  className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-1 min-w-0"
+                  style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+                >
+                  {rep.location.blockOrTown} • {rep.category}
+                </strong>
+              </div>
+              <p
+                className="text-xs sm:text-sm text-slate-700 leading-relaxed font-medium bg-white/80 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200/80 break-words line-clamp-2 min-w-0"
+                style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
+              >
+                "{rep.rawText || rep.aiProcessing?.transcription || 'Written civic intake.'}"
+              </p>
+              <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
+                <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
+                <span className="font-bold text-slate-700">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-slate-200 sm:border-0 gap-2">
+            <span className="px-2 py-1 rounded-lg bg-white border border-slate-300 font-mono text-[11px] sm:text-xs font-black text-slate-800 shadow-2xs block shrink-0">
+              Score: {rep.aiProcessing?.aiConfidenceScore || 90}/100
+            </span>
+          </div>
+        </div>
+      );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#FAFAFB] text-slate-900 pb-16 min-w-0">
@@ -154,59 +327,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6 min-w-0">
         
-        {/* Role Switcher Pills Strip */}
-        <div className="bg-white rounded-[24px] border border-slate-200/90 p-3 sm:p-4 shadow-md overflow-x-auto min-w-0">
-          <div className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider mb-2.5 px-1 min-w-0">
-            {t('dashboard.role.title')}
-          </div>
-          <div className="flex items-center gap-2 min-w-max pb-1">
-            {rolesList.map((role) => {
-              const isSelected = activeRole === role.id;
-              return (
-                <button
-                  key={role.id}
-                  onClick={() => setActiveRole(role.id)}
-                  className={`px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 border shrink-0 ${
-                    isSelected
-                      ? 'bg-slate-900 text-white border-slate-800 shadow-md scale-[1.02]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-teal-300'
-                  }`}
-                  title={role.desc}
-                >
-                  <span className="text-base">{role.icon}</span>
-                  <span>{role.label}</span>
-                  {isSelected && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* ROLE SPECIFIC VIEWPORT RENDER */}
-        {activeRole !== 'MP' && activeRole !== 'DISTRICT_OFFICER' ? (
-          <div className="bg-white rounded-[28px] border border-slate-200/90 p-8 shadow-xl text-center space-y-4 max-w-3xl mx-auto">
-            <div className="w-16 h-16 rounded-2xl bg-teal-50 border border-teal-200 text-teal-600 flex items-center justify-center mx-auto shadow-md">
-              <UserCheck className="w-8 h-8" />
-            </div>
-            <h3 className="text-xl sm:text-2xl font-black text-slate-900">
-              {t('dashboard.viewportActiveFor')} {rolesList.find(r => r.id === activeRole)?.label}
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto font-medium leading-relaxed">
-              {t('dashboard.roleDesc')}
-            </p>
-            <div className="pt-2 flex justify-center gap-3">
-              <button
-                onClick={() => setActiveRole('MP')}
-                className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md shadow-teal-600/20"
-              >
-                {t('dashboard.returnToMp')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start min-w-0">
-            
-            {/* LEFT 5 COLUMNS: Formula Weight Calibration Sliders */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start min-w-0">
+          
+          {/* LEFT 5 COLUMNS: Formula Weight Calibration Sliders */}
             <div className="lg:col-span-5 order-2 lg:order-1 bg-white rounded-[24px] sm:rounded-[28px] border border-slate-200/90 shadow-xl p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 overflow-hidden">
               <div className="border-b border-slate-100 pb-4 min-w-0">
                 <div className="flex items-center justify-between gap-2 min-w-0 flex-wrap">
@@ -404,140 +528,76 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                 <div className="flex flex-wrap items-center justify-between border-b border-slate-200/80 pb-2.5 gap-2 min-w-0">
                   <h3 className="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-2 min-w-0">
                     <span className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center text-xs shadow-2xs shrink-0">⚡</span>
-                    <span className="truncate min-w-0">Ranked Citizen Demand Priority List</span>
+                    <span className="truncate min-w-0">{showClustersView ? 'Demand Cluster List' : 'Ranked Citizen Demand Priority List'}</span>
                   </h3>
-                  <span className="text-[11px] sm:text-xs font-mono text-teal-700 font-bold bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200 shrink-0">
-                    Live Verified ({displayedPriorityReports.length})
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!showClustersView ? (
+                      <button
+                        onClick={() => setShowClustersView(true)}
+                        className="px-2.5 sm:px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                      >
+                        <Boxes className="w-3.5 h-3.5 shrink-0" />
+                        <span>View Clusters</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowClustersView(false)}
+                        className="px-2.5 sm:px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                        <span>Back to Priority List</span>
+                      </button>
+                    )}
+                    <span className="text-[11px] sm:text-[11px] font-mono text-teal-700 font-bold bg-teal-50 px-2.5 py-1 rounded-full border border-teal-200 shrink-0">
+                      {showClustersView ? `Clusters (${dynamicHotspots.length})` : `All Demand (${dynamicHotspots.length + displayedPriorityReports.length})`}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-2.5 sm:space-y-3 max-h-[500px] sm:max-h-[440px] overflow-y-auto pr-1 min-w-0">
-                  {displayedPriorityReports.length === 0 ? (
-                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
-                      No citizen submissions recorded yet. Submit a Voice Memo, Photo, or Text note on the Report tab to see instant priority ranking here!
-                    </div>
+                  {showClustersView ? (
+                    dynamicHotspots.length === 0 ? (
+                      <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
+                        No demand clusters available currently for the selected filters.
+                      </div>
+                    ) : (
+                      dynamicHotspots.map(renderClusterCard)
+                    )
                   ) : (
-                    displayedPriorityReports.map((rep) => {
-                      if (rep.inputMethod === 'VOICE' || (rep as any).intakeType === 'VOICE') {
-                        return (
-                          <div key={rep.id} className="bg-teal-50/90 border border-teal-300 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs min-w-0 w-full overflow-hidden">
-                            <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1 w-full">
-                              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm font-bold text-base sm:text-lg">
-                                🎙️
-                              </div>
-                              <div className="min-w-0 flex-1 w-full">
-                                <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
-                                  <span className="px-1.5 py-0.5 rounded-md bg-teal-600 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
-                                    VOICE COMPLAINT
-                                  </span>
-                                  <strong
-                                    className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-2 min-w-0 leading-tight"
-                                    style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                                  >
-                                    {rep.location.blockOrTown} • {rep.category}
-                                  </strong>
-                                </div>
-                                <p
-                                  className="text-xs sm:text-sm font-serif italic text-slate-900 leading-relaxed bg-white/80 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-teal-200/80 break-words line-clamp-2 min-w-0"
-                                  style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                                >
-                                  "{rep.rawText || rep.aiProcessing?.transcription || rep.aiProcessing?.aiSummary || 'Verified spoken civic report.'}"
-                                </p>
-                                <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
-                                  <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
-                                  <span className="font-bold text-teal-800">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-teal-200/60 sm:border-0 gap-2">
-                              <span className="px-2 py-1 rounded-lg bg-white border border-teal-200 font-mono text-[11px] sm:text-xs font-black text-teal-800 shadow-2xs block shrink-0">
-                                Score: {rep.aiProcessing?.aiConfidenceScore || 94}/100
-                              </span>
-                            </div>
+                    dynamicHotspots.length === 0 && displayedPriorityReports.length === 0 ? (
+                      <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
+                        No citizen submissions recorded yet. Submit a Voice Memo, Photo, or Text note on the Report tab to see instant priority ranking here!
+                      </div>
+                    ) : (
+                      <>
+                        {/* 1. Demand Clusters at the TOP of the Ranked Citizen Demand Priority List */}
+                        {dynamicHotspots.length > 0 && (
+                          <div className="space-y-2.5 min-w-0">
+                            {dynamicHotspots.map(renderClusterCard)}
                           </div>
-                        );
-                      } else if (rep.inputMethod === 'PHOTO' || rep.rawMediaUrl || (rep as any).intakeType === 'PHOTO') {
-                        return (
-                          <div key={rep.id} className="bg-emerald-50/80 border border-emerald-300 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start gap-3 sm:gap-4 shadow-2xs min-w-0 w-full overflow-hidden">
-                            {rep.rawMediaUrl && (
-                              <img src={rep.rawMediaUrl} alt="Reported defect" className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-xl border-2 border-emerald-400 shadow-sm shrink-0" />
-                            )}
-                            <div className="min-w-0 flex-1 w-full">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-600 text-white font-mono text-[9px] sm:text-[10px] font-black uppercase tracking-wide shrink-0">
-                                    📸 PHOTO EVIDENCE
-                                  </span>
-                                  <strong
-                                    className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-2 min-w-0 leading-tight"
-                                    style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                                  >
-                                    {rep.location.blockOrTown} • {rep.category}
-                                  </strong>
-                                </div>
-                                <span className="px-2 py-1 rounded-lg bg-white border border-emerald-200 font-mono text-[11px] sm:text-xs font-black text-emerald-800 shadow-2xs shrink-0 self-start sm:self-center">
-                                  Score: {rep.aiProcessing?.aiConfidenceScore || 96}/100
+                        )}
+
+                        {/* 2. Individual Citizen Complaints below Clusters */}
+                        {displayedPriorityReports.length > 0 && (
+                          <div className="space-y-2.5 pt-1 min-w-0">
+                            {dynamicHotspots.length > 0 && (
+                              <div className="flex items-center gap-2 pt-1 pb-0.5 min-w-0">
+                                <span className="text-[10px] sm:text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
+                                  Individual Citizen Submissions ({displayedPriorityReports.length})
                                 </span>
+                                <div className="h-px bg-slate-200 flex-1" />
                               </div>
-                              <p
-                                className="text-xs sm:text-sm text-slate-900 font-medium leading-relaxed bg-white/90 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 break-words line-clamp-2 min-w-0"
-                                style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                              >
-                                {rep.rawText || rep.aiProcessing?.imageDefectDetected || rep.aiProcessing?.aiSummary || 'Verified structural deterioration captured via photo.'}
-                              </p>
-                              <div className="text-[10px] sm:text-[11px] font-mono text-emerald-800 mt-1.5 flex items-center justify-between gap-2 flex-wrap min-w-0 break-words">
-                                <span className="truncate min-w-0">📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
-                                <span className="font-bold text-emerald-900 shrink-0">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
-                              </div>
-                            </div>
+                            )}
+                            {displayedPriorityReports.map(renderReportCard)}
                           </div>
-                        );
-                      } else {
-                        return (
-                          <div key={rep.id} className="bg-slate-50 border border-slate-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs min-w-0 w-full overflow-hidden">
-                            <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1 w-full">
-                              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm font-bold text-base sm:text-lg">
-                                📝
-                              </div>
-                              <div className="min-w-0 flex-1 w-full">
-                                <div className="flex items-center gap-1.5 flex-wrap mb-1 min-w-0">
-                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-800 text-white font-mono text-[9px] sm:text-[10px] font-black tracking-wide uppercase shrink-0">
-                                    DIRECT TEXT INTAKE
-                                  </span>
-                                  <strong
-                                    className="text-xs sm:text-sm font-extrabold text-slate-900 break-words line-clamp-2 min-w-0 leading-tight"
-                                    style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                                  >
-                                    {rep.location.blockOrTown} • {rep.category}
-                                  </strong>
-                                </div>
-                                <p
-                                  className="text-xs sm:text-sm text-slate-800 leading-relaxed bg-white p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 break-words line-clamp-2 min-w-0"
-                                  style={{ overflowWrap: 'break-word', wordBreak: 'break-word', minWidth: 0 }}
-                                >
-                                  "{rep.rawText || rep.aiProcessing?.transcription || 'Written civic intake.'}"
-                                </p>
-                                <div className="text-[10px] sm:text-[11px] font-mono text-slate-500 mt-1.5 flex items-center justify-between gap-2 flex-wrap">
-                                  <span>📍 {rep.location.blockOrTown}, {rep.location.constituency}</span>
-                                  <span className="font-bold text-slate-700">🕒 {rep.timestamp || 'Sat, 11 Jul • 11:45 AM'}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0 self-start sm:self-center flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-1 sm:pt-0 border-t border-slate-200 sm:border-0 gap-2">
-                              <span className="px-2 py-1 rounded-lg bg-white border border-slate-300 font-mono text-[11px] sm:text-xs font-black text-slate-800 shadow-2xs block shrink-0">
-                                Score: {rep.aiProcessing?.aiConfidenceScore || 90}/100
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      }
-                    })
+                        )}
+                      </>
+                    )
                   )}
                 </div>
               </div>
             </div>
           </div>
-        )}
       </div>
     </div>
   );

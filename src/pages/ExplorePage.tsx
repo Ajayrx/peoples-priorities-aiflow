@@ -414,7 +414,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                 </div>
                 <div className="truncate">
                   <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 truncate">
-                    Spatial Intelligence Viewport
+                    Demand Hotspots Map
                   </h3>
                   <p className="text-[11px] font-mono text-slate-500 truncate">
                     DBSCAN & H3 Hexagonal Grid Clustering • Scale 1:250,000
@@ -1059,16 +1059,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
               </button>
             </div>
 
-            {/* 7-Tab Navigation Bar inside Drawer */}
+            {/* 4-Tab Navigation Bar inside Drawer */}
             <div className="bg-slate-100 border-b border-slate-200 px-4 sm:px-6 flex items-center gap-1.5 overflow-x-auto select-none pt-2">
               {[
                 { id: 1, label: t('explore.tab1'), icon: Sparkles },
                 { id: 2, label: t('explore.tab2'), icon: BarChart3 },
                 { id: 3, label: t('explore.tab3'), icon: Users },
                 { id: 4, label: t('explore.tab4'), icon: Building2 },
-                { id: 5, label: t('explore.tab5'), icon: ShieldCheck },
-                { id: 6, label: t('explore.tab6'), icon: Sliders },
-                { id: 7, label: t('explore.tab7'), icon: Eye },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;

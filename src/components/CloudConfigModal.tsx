@@ -30,7 +30,7 @@ export const CloudConfigModal: React.FC<CloudConfigModalProps> = ({ isOpen, onCl
     }, 1200);
   };
 
-  const isGeminiReady = hasValidGeminiKey() || (config.geminiApiKey.length > 15 && config.geminiApiKey.startsWith('AIza'));
+  const isGeminiReady = hasValidGeminiKey() || config.geminiApiKey.trim().length > 10;
   const isFirebaseReady = hasValidFirebaseConfig() || Boolean(config.firebaseConfig.apiKey && config.firebaseConfig.projectId);
 
   return (
@@ -83,7 +83,7 @@ export const CloudConfigModal: React.FC<CloudConfigModalProps> = ({ isOpen, onCl
 
             <input
               type="password"
-              placeholder="AIzaSy... (Paste your Gemini API key here)"
+              placeholder="AIzaSy... or AQ... (Paste your Gemini API key here)"
               value={config.geminiApiKey}
               onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 font-mono text-xs text-slate-800 outline-none transition-all"

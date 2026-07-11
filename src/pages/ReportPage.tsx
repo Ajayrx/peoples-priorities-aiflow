@@ -16,8 +16,9 @@ import {
   Square,
   AlertTriangle
 } from 'lucide-react';
-import type { Region, CategoryType } from '../types';
+import type { Region, CategoryType, PriorityLevel } from '../types';
 import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
+import { transcribeAndTranslateAudio } from '../services/geminiAudio';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -62,8 +63,13 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [voiceRecorded, setVoiceRecorded] = useState<boolean>(true);
-  const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'HINDI' | 'ENGLISH'>('ODIA');
+  const [selectedLanguage, setSelectedLanguage] = useState<'ODIA' | 'HINDI' | 'TELUGU' | 'ENGLISH'>('ODIA');
   const [customVoiceText, setCustomVoiceText] = useState<string>('');
+  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [voiceDetectedIssue, setVoiceDetectedIssue] = useState<string>('');
+  const [voicePriorityLevel, setVoicePriorityLevel] = useState<PriorityLevel>('HIGH');
+  const [voiceConfidenceScore, setVoiceConfidenceScore] = useState<number>(94);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -71,6 +77,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const speechRecognitionRef = useRef<any>(null);
   const recordingIntervalRef = useRef<any>(null);
+  const customVoiceTextRef = useRef<string>('');
+
+  useEffect(() => {
+    customVoiceTextRef.current = customVoiceText;
+  }, [customVoiceText]);
 
   // Photo state
   const [photoUploaded, setPhotoUploaded] = useState<boolean>(false);
@@ -86,16 +97,8 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Simulated transcriptions
-  const simulatedTranscriptionOdia = 'ସେମିଳିଗୁଡ଼ା ମୁଖ୍ୟ ବ୍ଲକ୍ ରାସ୍ତାରେ ବଡ଼ ଗାତ ଅଛି, ବର୍ଷା ଦିନରେ ପିଲାମାନେ ସ୍କୁଲ୍ ଯାଇପାରୁନାହାନ୍ତି। ତୁରନ୍ତ ମରାମତି ଦରକାର।';
-  const simulatedTranscriptionHindi = 'सेमीलीगुड़ा मुख्य ब्लॉक सड़क पर भारी गड्ढे और जलभराव है, मानसून के दौरान बच्चों को स्कूल जाने में भारी परेशानी होती है। तुरंत मरम्मत की आवश्यकता है।';
-  const simulatedTranscriptionEnglish = 'Semiliguda main block road has severe potholes and a 4-foot washout, during monsoon children cannot go to school. Urgent repair needed immediately.';
-
-  const activeTranscriptText = customVoiceText.trim() !== ''
-    ? customVoiceText
-    : selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia
-    : selectedLanguage === 'HINDI' ? simulatedTranscriptionHindi
-    : simulatedTranscriptionEnglish;
+  // Real English Complaint Transcript derived from actual audio
+  const activeTranscriptText = customVoiceText.trim() !== '' ? customVoiceText : '';
 
   const simulatedImageDefect = 'Gemini 3.1 Pro Vision Defect Detection: Severe structural erosion & collapsed box culvert across 15 meters. Water velocity hazard identified.';
   const simulatedConfidence = 96;
@@ -109,23 +112,51 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     { id: 'Electricity', label: t('cat.electricity'), icon: '⚡' },
   ];
 
-  const handleStopRecording = () => {
+  const handleStopRecording = async () => {
     if (recordingIntervalRef.current) { clearInterval(recordingIntervalRef.current); recordingIntervalRef.current = null; }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') mediaRecorderRef.current.stop();
+    const wasRecordingMedia = mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording';
+    if (wasRecordingMedia && mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
     if (speechRecognitionRef.current) { try { speechRecognitionRef.current.stop(); } catch (e) { console.warn('Speech recognition stop warning:', e); } }
     setIsRecording(false);
-    setVoiceRecorded(true);
-    setCustomVoiceText((prev) => {
-      if (prev && prev.trim() !== '') return prev;
-      return selectedLanguage === 'ODIA' ? simulatedTranscriptionOdia : selectedLanguage === 'HINDI' ? simulatedTranscriptionHindi : simulatedTranscriptionEnglish;
-    });
+
+    // If MediaRecorder was not active (e.g. mic permission denied or no audio chunks), run processing via fallback
+    if (!wasRecordingMedia) {
+      setIsProcessingAudio(true);
+      setAudioError(null);
+      try {
+        const dummyBlob = new Blob([], { type: 'audio/webm' });
+        const result = await transcribeAndTranslateAudio(dummyBlob, selectedLanguage, customVoiceTextRef.current);
+        setIsProcessingAudio(false);
+        setVoiceRecorded(true);
+        if (result.error || result.englishTranscript === 'No speech detected. Please try again.') {
+          setAudioError(result.error || 'No speech detected. Please try again.');
+          setCustomVoiceText('No speech detected. Please try again.');
+        } else {
+          setCustomVoiceText(result.englishTranscript);
+          if (result.category) setCategory(result.category);
+          if (result.detectedIssue) setVoiceDetectedIssue(result.detectedIssue);
+          if (result.priorityLevel) setVoicePriorityLevel(result.priorityLevel);
+          if (result.confidenceScore) setVoiceConfidenceScore(result.confidenceScore);
+        }
+      } catch (err: any) {
+        setIsProcessingAudio(false);
+        setVoiceRecorded(true);
+        setAudioError(`Audio processing failed: ${err?.message || 'Unable to connect to Gemini API'}`);
+        setCustomVoiceText('No speech detected. Please try again.');
+      }
+    }
   };
 
   const handleSimulateRecord = async () => {
     if (isRecording) { handleStopRecording(); return; }
     setCustomVoiceText('');
+    customVoiceTextRef.current = '';
     setIsRecording(true);
     setVoiceRecorded(false);
+    setIsProcessingAudio(false);
+    setAudioError(null);
     setAudioBlobUrl(null);
     setRecordingSeconds(1);
 
@@ -136,13 +167,23 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
         speechRecognitionRef.current = recognition;
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = selectedLanguage === 'ODIA' ? 'or-IN' : selectedLanguage === 'HINDI' ? 'hi-IN' : 'en-IN';
+        recognition.lang =
+          selectedLanguage === 'ODIA'
+            ? 'or-IN'
+            : selectedLanguage === 'HINDI'
+            ? 'hi-IN'
+            : selectedLanguage === 'TELUGU'
+            ? 'te-IN'
+            : 'en-IN';
         recognition.onresult = (event: any) => {
           let fullTranscript = '';
           for (let i = 0; i < event.results.length; ++i) {
             if (event.results[i] && event.results[i][0]) fullTranscript += event.results[i][0].transcript + ' ';
           }
-          if (fullTranscript.trim()) setCustomVoiceText(fullTranscript.trim());
+          if (fullTranscript.trim()) {
+            setCustomVoiceText(fullTranscript.trim());
+            customVoiceTextRef.current = fullTranscript.trim();
+          }
         };
         recognition.onerror = (event: any) => { console.warn('Speech recognition warning:', event.error); };
         recognition.start();
@@ -156,10 +197,35 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
         mediaRecorder.ondataavailable = (event) => { if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data); };
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' });
-          setAudioBlobUrl(URL.createObjectURL(audioBlob));
+          if (audioChunksRef.current.length > 0) {
+            setAudioBlobUrl(URL.createObjectURL(audioBlob));
+          }
           stream.getTracks().forEach((t) => t.stop());
+
+          setIsProcessingAudio(true);
+          setAudioError(null);
+          try {
+            const result = await transcribeAndTranslateAudio(audioBlob, selectedLanguage, customVoiceTextRef.current);
+            setIsProcessingAudio(false);
+            setVoiceRecorded(true);
+            if (result.error || result.englishTranscript === 'No speech detected. Please try again.') {
+              setAudioError(result.error || 'No speech detected. Please try again.');
+              setCustomVoiceText('No speech detected. Please try again.');
+            } else {
+              setCustomVoiceText(result.englishTranscript);
+              if (result.category) setCategory(result.category);
+              if (result.detectedIssue) setVoiceDetectedIssue(result.detectedIssue);
+              if (result.priorityLevel) setVoicePriorityLevel(result.priorityLevel);
+              if (result.confidenceScore) setVoiceConfidenceScore(result.confidenceScore);
+            }
+          } catch (err: any) {
+            setIsProcessingAudio(false);
+            setVoiceRecorded(true);
+            setAudioError(`Audio processing failed: ${err?.message || 'Unable to connect to Gemini API'}`);
+            setCustomVoiceText('No speech detected. Please try again.');
+          }
         };
         mediaRecorder.start();
         if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
@@ -171,11 +237,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
         }, 1000);
       } else throw new Error('Microphone unavailable');
     } catch (err) {
-      console.warn('Real microphone unavailable, using simulation:', err);
+      console.warn('Real microphone unavailable, using browser speech fallback:', err);
       if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => { if (prev >= 6) { handleStopRecording(); return 7; } return prev + 1; });
-      }, 800);
+        setRecordingSeconds((prev) => { if (prev >= 59) { handleStopRecording(); return prev; } return prev + 1; });
+      }, 1000);
     }
   };
 
@@ -306,10 +372,10 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     await new Promise((resolve) => setTimeout(resolve, 750));
     await submitReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
-      category: visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category,
-      priorityLevel: visionResult?.priorityLevel || 'HIGH',
-      priorityScore: visionResult?.confidenceScore || 94,
-      detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : intakeMode === 'VOICE' ? activeTranscriptText.slice(0, 60) : 'Reported defect')),
+      category: intakeMode === 'VOICE' ? category : (visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category),
+      priorityLevel: intakeMode === 'VOICE' ? voicePriorityLevel : (visionResult?.priorityLevel || 'HIGH'),
+      priorityScore: intakeMode === 'VOICE' ? voiceConfidenceScore : (visionResult?.confidenceScore || 94),
+      detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (intakeMode === 'VOICE' ? (voiceDetectedIssue || activeTranscriptText.slice(0, 60) || 'Spoken Civic Complaint') : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Reported defect'))),
       urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.urgencyReasoning || visionResult?.detectedIssue || 'Civic infrastructure report') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
       photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
       intakeType: intakeMode,
@@ -560,19 +626,19 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                         <Volume2 className="w-4 h-4 text-teal-600" />
                         {t('report.voice.lang')}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {(['ODIA', 'HINDI', 'ENGLISH'] as const).map((lang) => (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(['ODIA', 'HINDI', 'TELUGU', 'ENGLISH'] as const).map((lang) => (
                           <button key={lang} type="button" onClick={() => setSelectedLanguage(lang)}
                             className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
                               selectedLanguage === lang ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:border-teal-300'
                             }`}>
-                            {lang === 'ODIA' ? 'Odia' : lang === 'HINDI' ? 'Hindi' : 'English'}
+                            {lang === 'ODIA' ? 'Odia / ଓଡ଼ିଆ' : lang === 'HINDI' ? 'Hindi / हिन्दी' : lang === 'TELUGU' ? 'Telugu / తెలుగు' : 'English'}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Record zone — lavender like reference */}
+                    {/* Record zone */}
                     <div className="flex-1 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 flex flex-col items-center justify-center gap-4 py-12 min-h-[220px]">
                       <button type="button" onClick={handleSimulateRecord}
                         className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all ${
@@ -588,8 +654,8 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                         </p>
                         <p className="text-xs text-slate-400 font-mono mt-1">
                           {isRecording ? `00:${recordingSeconds < 10 ? '0' + recordingSeconds : recordingSeconds} / 01:00`
-                            : voiceRecorded ? 'Duration: 00:14s · WAV · Gemini Transcribed'
-                            : 'Supports Odia, Hindi & English'}
+                            : voiceRecorded ? 'Real Microphone Audio · Gemini Multilingual Understanding'
+                            : 'Supports English, Odia, Hindi & Telugu'}
                         </p>
                       </div>
                       {isRecording && (
@@ -601,22 +667,62 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                       )}
                     </div>
 
-                    {voiceRecorded && !isRecording && (
+                    {/* Audio Processing State */}
+                    {isProcessingAudio && (
+                      <div className="bg-teal-50 border border-teal-200 rounded-xl p-5 flex flex-col items-center justify-center gap-3 text-center animate-pulse">
+                        <div className="w-7 h-7 rounded-full border-3 border-teal-600 border-t-transparent animate-spin" />
+                        <p className="font-bold text-sm text-teal-900">
+                          Gemini is processing real audio & generating English Complaint Transcript...
+                        </p>
+                        <p className="text-xs text-teal-700 font-mono">
+                          {selectedLanguage === 'ODIA' ? 'Translating from Odia / ଓଡ଼ିଆ → English' : selectedLanguage === 'HINDI' ? 'Translating from Hindi / हिन्दी → English' : selectedLanguage === 'TELUGU' ? 'Translating from Telugu / తెలుగు → English' : 'Transcribing spoken English audio'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Audio Error or No Speech Detected */}
+                    {audioError && !isProcessingAudio && (
+                      <div className="bg-rose-50 border-2 border-rose-300 rounded-xl p-4 flex items-start gap-3 text-rose-900">
+                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1">
+                          <div className="font-extrabold text-sm">
+                            {audioError.includes('No speech') || customVoiceText.includes('No speech') ? 'No Speech Detected' : 'Audio Processing Error'}
+                          </div>
+                          <p className="text-xs font-medium leading-relaxed">
+                            {audioError}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* English Complaint Transcript Result */}
+                    {voiceRecorded && !isRecording && !isProcessingAudio && !audioError && activeTranscriptText !== '' && activeTranscriptText !== 'No speech detected. Please try again.' && (
                       <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-teal-800 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Gemini Live Transcription
-                          </span>
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-teal-800 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                              English Complaint Transcript
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 font-mono text-[11px] font-bold">
+                              {selectedLanguage === 'ODIA' ? 'Translated from Odia' : selectedLanguage === 'HINDI' ? 'Translated from Hindi' : selectedLanguage === 'TELUGU' ? 'Translated from Telugu' : 'Transcribed from English'}
+                            </span>
+                          </div>
                           <button type="button" onClick={handlePlayAudio}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${isPlayingAudio ? 'bg-amber-500 text-white' : 'bg-teal-600 text-white hover:bg-teal-700'}`}>
                             {isPlayingAudio ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                             {isPlayingAudio ? 'Playing…' : 'Play'}
                           </button>
                         </div>
-                        <p className="text-sm font-serif italic text-slate-700 bg-white p-3 rounded-lg border border-teal-100 leading-relaxed">
+                        <p className="text-sm font-serif italic text-slate-700 bg-white p-3.5 rounded-lg border border-teal-100 leading-relaxed shadow-sm">
                           "{activeTranscriptText}"
                         </p>
+                        {voiceDetectedIssue && (
+                          <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-teal-100">
+                            <span>AI Title: <strong className="text-slate-700">{voiceDetectedIssue}</strong></span>
+                            <span>Category: <strong className="text-teal-700">{category}</strong></span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
