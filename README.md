@@ -4,7 +4,7 @@
 
 > Turning citizen text,photo,voices into Priority-based development decisions using AI.
 
-![Build with AI](https://img.shields.io/badge/Build%20With-AI-blue)
+![Build with AI - Google Hackathon](https://img.shields.io/badge/Build%20with%20AI-Google%20Hackathon-green)
 
 ## The Vision
 
