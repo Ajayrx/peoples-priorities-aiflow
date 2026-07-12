@@ -145,10 +145,9 @@ export async function evaluateLocalityPhoto(base64Image: string): Promise<Gemini
   if (hasValidGeminiKey() && config.geminiApiKey) {
     // Order by highest free tier quota (15 RPM for flash vs 2 RPM for pro) to prevent 429 TooManyRequests
     const modelsToTry = [
+      'gemini-2.5-flash',
       'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-2.0-flash-exp',
-      'gemini-1.5-pro'
+      'gemini-1.5-pro',
     ];
 
     const promptText = `You are an AI assistant helping categorize and title a citizen-uploaded photo for a civic infrastructure issue.

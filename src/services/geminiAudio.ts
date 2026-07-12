@@ -132,10 +132,9 @@ Respond ONLY with this exact JSON (no markdown, no extra text):
 
   if (base64Audio.length > 0) {
     const modelsToTry = [
-      'gemini-2.0-flash',
+      'gemini-2.5-flash',
       'gemini-1.5-flash',
       'gemini-1.5-pro',
-      'gemini-2.0-flash-lite',
     ];
 
     for (const modelName of modelsToTry) {
@@ -224,7 +223,7 @@ Respond ONLY with this exact JSON (no markdown, no extra text):
   if (fallbackText && fallbackText.trim() !== '' && !fallbackText.includes('No speech')) {
     if (hasValidGeminiKey() && config.geminiApiKey) {
       try {
-        const textEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.geminiApiKey.trim()}`;
+        const textEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${config.geminiApiKey.trim()}`;
         const textPrompt = `A citizen spoke a civic grievance. Browser speech recognition captured this text in ${languageLabel}: "${fallbackText.trim()}"
 
 Clean up and keep the text in the same language (do NOT translate to English unless they spoke English).
