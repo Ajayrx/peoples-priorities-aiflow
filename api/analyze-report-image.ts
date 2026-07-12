@@ -18,6 +18,12 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 // ── Canonical application categories ──────────────────────────────────────────
 const CANONICAL_CATEGORIES = [
   'ROAD', 'SCHOOLS', 'HEALTHCARE', 'WATER',

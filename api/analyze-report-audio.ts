@@ -19,6 +19,12 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 // ── In-Memory Rate Limiter (Per Vercel Instance Burst Protection) ─────────────
 // Note: This is NOT global distributed rate limiting. It only provides basic
 // burst protection per cold-start instance. For global limits, use Upstash/Redis.
