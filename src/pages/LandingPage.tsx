@@ -63,7 +63,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
   // The remaining slots (at least 3, up to 9 if no clusters are available) are occupied by individual complaints.
   const heroGridItems = useMemo(() => {
     const selectedClusters = clusters.slice(0, 6);
-    const remainingSlots = 9 - selectedClusters.length;
+    const remainingSlots = Math.max(0, 6 - selectedClusters.length);
     const selectedComplaints = individualReports.slice(0, remainingSlots);
 
     return [
@@ -232,7 +232,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 />
 
                 {/* Hotspot & Cluster Radar Pins Grid */}
-                <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 max-h-[220px] overflow-y-auto pr-1">
+                <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 w-full">
                   {heroGridItems.map((item) => {
                     const isSelected = activeItem?.id === item.id;
                     return (

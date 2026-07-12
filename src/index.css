@@ -132,3 +132,12 @@
   0%   { transform: scaleY(0.3); opacity: 0.5; }
   100% { transform: scaleY(1);   opacity: 1;   }
 }
+
+/* Hide scrollbars while keeping scroll functionality */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
