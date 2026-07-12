@@ -44,6 +44,7 @@ export interface GeminiAudioResult {
 export async function transcribeAndTranslateAudio(
   audioBlob: Blob,
   selectedLanguage: 'ODIA' | 'HINDI' | 'TELUGU' | 'ENGLISH',
+  fallbackText?: string
 ): Promise<GeminiAudioResult> {
   const AI_FAILED: GeminiAudioResult = {
     status: 'AI_ANALYSIS_FAILED',
@@ -64,6 +65,9 @@ export async function transcribeAndTranslateAudio(
   const formData = new FormData();
   formData.append('audioBlob', audioBlob, 'complaint.webm');
   formData.append('selectedLanguage', selectedLanguage);
+  if (fallbackText && fallbackText.trim()) {
+    formData.append('fallbackText', fallbackText.trim());
+  }
 
   // 3. POST to Vercel serverless endpoint
   let responseData: any;

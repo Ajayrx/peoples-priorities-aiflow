@@ -110,29 +110,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
   if (!boundaryMatch) return res.status(400).json({ error: 'Invalid multipart boundary' });
-  const boundary = boundaryMatch[1];
+  const boundary = boundaryMatch[1].replace(/^"|"$/g, '');
 
   let audioBase64 = '';
   let audioMimeType = '';
   let selectedLanguage = 'ENGLISH';
+  let fallbackText = '';
 
-  const parts = rawBody.toString('binary').split(`--${boundary}`);
-  for (const part of parts) {
-    if (part.includes('name="audioBlob"')) {
-      const mimeMatch = part.match(/Content-Type:\s*([^\r\n]+)/i);
-      audioMimeType = mimeMatch ? mimeMatch[1].trim() : 'audio/webm';
-      const dataStart = part.indexOf('\r\n\r\n');
-      if (dataStart !== -1) {
-        const binaryData = part.slice(dataStart + 4, part.lastIndexOf('\r\n'));
-        audioBase64 = Buffer.from(binaryData, 'binary').toString('base64');
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  let startIndex = 0;
+  while (true) {
+    const partStart = rawBody.indexOf(boundaryBuffer, startIndex);
+    if (partStart === -1) break;
+    
+    const nextBoundary = rawBody.indexOf(boundaryBuffer, partStart + boundaryBuffer.length);
+    const partEnd = nextBoundary !== -1 ? nextBoundary : rawBody.length;
+    
+    const partBuffer = rawBody.subarray(partStart + boundaryBuffer.length, partEnd);
+    
+    const headerEnd = partBuffer.indexOf(Buffer.from('\r\n\r\n'));
+    if (headerEnd !== -1) {
+      const headerText = partBuffer.subarray(0, headerEnd).toString('utf-8');
+      if (headerText.includes('name="audioBlob"')) {
+        const mimeMatch = headerText.match(/Content-Type:\s*([^\r\n]+)/i);
+        audioMimeType = mimeMatch ? mimeMatch[1].trim() : 'audio/webm';
+        const dataBuffer = partBuffer.subarray(headerEnd + 4, Math.max(headerEnd + 4, partBuffer.length - 2));
+        audioBase64 = dataBuffer.toString('base64');
+      }
+      if (headerText.includes('name="selectedLanguage"')) {
+        const dataBuffer = partBuffer.subarray(headerEnd + 4, Math.max(headerEnd + 4, partBuffer.length - 2));
+        selectedLanguage = dataBuffer.toString('utf-8').trim().toUpperCase();
+      }
+      if (headerText.includes('name="fallbackText"')) {
+        const dataBuffer = partBuffer.subarray(headerEnd + 4, Math.max(headerEnd + 4, partBuffer.length - 2));
+        fallbackText = dataBuffer.toString('utf-8').trim();
       }
     }
-    if (part.includes('name="selectedLanguage"')) {
-      const dataStart = part.indexOf('\r\n\r\n');
-      if (dataStart !== -1) {
-        selectedLanguage = part.slice(dataStart + 4).replace(/\r\n$/, '').trim().toUpperCase();
-      }
-    }
+    
+    if (nextBoundary === -1) break;
+    startIndex = nextBoundary;
   }
 
   // 5. Validate audio MIME (accept with or without codec params)
@@ -163,6 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const prompt = `You are an expert multilingual speech analysis AI for a citizen grievance platform serving rural communities in Odisha, India.
 
 The citizen spoke into their microphone. Their selected language is: ${selectedLanguage} (${languageLabel[selectedLanguage]}).
+${fallbackText && fallbackText.trim() !== '' ? `Browser speech recognition captured this preliminary snippet: "${fallbackText.trim()}" (Use this as a strong hint if the audio is unclear).` : ''}
 
 Your tasks:
 1. Detect the actual language spoken (it may differ from the selected language).

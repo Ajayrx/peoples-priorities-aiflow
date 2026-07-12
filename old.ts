@@ -16,55 +16,16 @@ import {
   Square,
   AlertTriangle
 } from 'lucide-react';
-import type { Region, CategoryType } from '../types';
-import { evaluateLocalityPhoto, type GeminiVisionResult, type ImageQualityFailureReason } from '../services/geminiVision';
+import type { Region, CategoryType, PriorityLevel } from '../types';
+import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
 import { transcribeAndTranslateAudio } from '../services/geminiAudio';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { useLanguage } from '../context/LanguageContext';
-import { initializeApp, getApps } from 'firebase/app';
-import { getStorage, ref, uploadBytes } from 'firebase/storage';
-import { getCloudConfig } from '../services/cloudConfig';
 
 interface ReportPageProps {
   region: Region;
   onSelectRegion?: (region: Region) => void;
   onNavigate: (tab: string) => void;
-}
-
-// ── Stage 1: Deterministic Image Quality Check (Canvas Pre-validation) ────────
-function checkImageQuality(ctx: CanvasRenderingContext2D, w: number, h: number): ImageQualityFailureReason | null {
-  if (w < 200 || h < 200) return 'IMAGE_TOO_SMALL';
-
-  const imgData = ctx.getImageData(0, 0, w, h).data;
-  let rSum = 0, gSum = 0, bSum = 0;
-  let count = 0;
-  
-  // Sample every 4th pixel for speed
-  for (let i = 0; i < imgData.length; i += 16) {
-    rSum += imgData[i];
-    gSum += imgData[i+1];
-    bSum += imgData[i+2];
-    count++;
-  }
-  
-  const rMean = rSum / count;
-  const gMean = gSum / count;
-  const bMean = bSum / count;
-  const brightness = (rMean + gMean + bMean) / 3;
-
-  if (brightness > 240) return 'SEVERELY_OVEREXPOSED';
-  if (brightness < 15) return 'SEVERELY_UNDEREXPOSED';
-
-  let rVar = 0, gVar = 0, bVar = 0;
-  for (let i = 0; i < imgData.length; i += 16) {
-    rVar += Math.pow(imgData[i] - rMean, 2);
-    gVar += Math.pow(imgData[i+1] - gMean, 2);
-    bVar += Math.pow(imgData[i+2] - bMean, 2);
-  }
-  const variance = (rVar + gVar + bVar) / (3 * count);
-  if (variance < 20) return 'BLANK_IMAGE';
-
-  return null;
 }
 
 export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, onNavigate }) => {
@@ -107,6 +68,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [voiceDetectedIssue, setVoiceDetectedIssue] = useState<string>('');
+  const [voicePriorityLevel, setVoicePriorityLevel] = useState<PriorityLevel>('HIGH');
   const [voiceConfidenceScore, setVoiceConfidenceScore] = useState<number>(94);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
@@ -126,8 +88,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('https://images.unsplash.com/photo-1584463667104-122ff1129b11?auto=format&fit=crop&w=600&q=80');
   const [isEvaluatingPhoto, setIsEvaluatingPhoto] = useState<boolean>(false);
   const [visionResult, setVisionResult] = useState<GeminiVisionResult | null>(null);
-  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
-  const [imageStoragePath, setImageStoragePath] = useState<string>('');
 
   // Text state
   const [textNote, setTextNote] = useState<string>('Write your problem here...');
@@ -140,7 +100,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   // Real English Complaint Transcript derived from actual audio
   const activeTranscriptText = customVoiceText.trim() !== '' ? customVoiceText : '';
 
-  const simulatedImageDefect = 'Vertex AI Defect Detection: Severe structural erosion & collapsed box culvert across 15 meters. Water velocity hazard identified.';
+  const simulatedImageDefect = 'Gemini 3.1 Pro Vision Defect Detection: Severe structural erosion & collapsed box culvert across 15 meters. Water velocity hazard identified.';
   const simulatedConfidence = 96;
 
   const categoriesList: { id: CategoryType; label: string; icon: string }[] = [
@@ -170,14 +130,15 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
         const result = await transcribeAndTranslateAudio(dummyBlob, selectedLanguage, customVoiceTextRef.current);
         setIsProcessingAudio(false);
         setVoiceRecorded(true);
-        if (result.status === 'AI_ANALYSIS_FAILED' || result.status === 'NO_SPEECH_DETECTED') {
+        if (result.error || result.englishTranscript === 'No speech detected. Please try again.') {
           setAudioError(result.error || 'No speech detected. Please try again.');
           setCustomVoiceText('No speech detected. Please try again.');
         } else {
-          setCustomVoiceText(result.englishTranscript ?? '');
+          setCustomVoiceText(result.englishTranscript);
           if (result.category) setCategory(result.category);
           if (result.detectedIssue) setVoiceDetectedIssue(result.detectedIssue);
-          if (result.confidence) setVoiceConfidenceScore(Math.round(result.confidence * 100));
+          if (result.priorityLevel) setVoicePriorityLevel(result.priorityLevel);
+          if (result.confidenceScore) setVoiceConfidenceScore(result.confidenceScore);
         }
       } catch (err: any) {
         setIsProcessingAudio(false);
@@ -249,14 +210,15 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
             const result = await transcribeAndTranslateAudio(audioBlob, selectedLanguage, customVoiceTextRef.current);
             setIsProcessingAudio(false);
             setVoiceRecorded(true);
-            if (result.status === 'AI_ANALYSIS_FAILED' || result.status === 'NO_SPEECH_DETECTED') {
+            if (result.error || result.englishTranscript === 'No speech detected. Please try again.') {
               setAudioError(result.error || 'No speech detected. Please try again.');
               setCustomVoiceText('No speech detected. Please try again.');
             } else {
-              setCustomVoiceText(result.englishTranscript ?? '');
+              setCustomVoiceText(result.englishTranscript);
               if (result.category) setCategory(result.category);
               if (result.detectedIssue) setVoiceDetectedIssue(result.detectedIssue);
-              if (result.confidence) setVoiceConfidenceScore(Math.round(result.confidence * 100));
+              if (result.priorityLevel) setVoicePriorityLevel(result.priorityLevel);
+              if (result.confidenceScore) setVoiceConfidenceScore(result.confidenceScore);
             }
           } catch (err: any) {
             setIsProcessingAudio(false);
@@ -369,7 +331,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       const rawBase64 = event.target?.result as string;
@@ -377,72 +338,29 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
       setIsEvaluatingPhoto(true);
       const img = new Image();
       img.crossOrigin = 'Anonymous';
-      
       img.onload = async () => {
         const canvas = document.createElement('canvas');
-        const maxDim = 1280; // Changed from 800 to 1280 per architectural requirements
+        const maxDim = 800;
         let w = img.width, h = img.height;
-        if (w > maxDim || h > maxDim) { 
-          if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; } 
-          else { w = Math.round((w * maxDim) / h); h = maxDim; } 
-        }
+        if (w > maxDim || h > maxDim) { if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; } else { w = Math.round((w * maxDim) / h); h = maxDim; } }
         canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
-
-          // STAGE 1: Deterministic Check
-          const qualityError = checkImageQuality(ctx, w, h);
-          if (qualityError) {
-            setPhotoPreviewUrl('');
-            setIsEvaluatingPhoto(false);
-            setVisionResult({
-              imageEvidenceStatus: 'IMAGE_QUALITY_FAILED',
-              imageQualityFailureReason: qualityError,
-              confidenceScore: 0,
-              detectedIssue: 'Invalid photo',
-              shortSummary: 'The photo does not meet minimum quality requirements.',
-              isRealApiEval: false
-            });
-            return;
-          }
-
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.82);
           setPhotoPreviewUrl(compressedBase64);
-
-          canvas.toBlob(async (blob) => {
-            if (blob) {
-              setImageBlob(blob);
-              try {
-                // Call evaluateLocalityPhoto directly with blob (No storage upload yet)
-                const result = await evaluateLocalityPhoto(blob, category);
-                setVisionResult(result);
-                if (result.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(result.category)) {
-                  setCategory(result.category);
-                }
-              } catch (err) {
-                console.error("Image analysis failed:", err);
-                setVisionResult({
-                  imageEvidenceStatus: 'AI_ANALYSIS_FAILED',
-                  confidenceScore: 0,
-                  detectedIssue: 'Analysis temporarily unavailable',
-                  shortSummary: 'Your report can still be submitted.',
-                  isRealApiEval: false,
-                });
-              }
-              setIsEvaluatingPhoto(false);
-            }
-          }, 'image/jpeg', 0.82);
+          const result = await evaluateLocalityPhoto(compressedBase64);
+          setVisionResult(result);
+          if (result.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(result.category)) setCategory(result.category);
+          setIsEvaluatingPhoto(false);
         } else {
           setPhotoPreviewUrl(rawBase64);
+          const result = await evaluateLocalityPhoto(rawBase64);
+          setVisionResult(result);
           setIsEvaluatingPhoto(false);
         }
       };
-      
-      img.onerror = () => { 
-        setPhotoPreviewUrl(rawBase64); 
-        setIsEvaluatingPhoto(false); 
-      };
+      img.onerror = async () => { setPhotoPreviewUrl(rawBase64); const result = await evaluateLocalityPhoto(rawBase64); setVisionResult(result); setIsEvaluatingPhoto(false); };
       img.src = rawBase64;
     };
     reader.readAsDataURL(file);
@@ -452,39 +370,14 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     e.preventDefault();
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 750));
-
-    let finalStoragePath = imageStoragePath;
-
-    // Handle lazy upload for PHOTO mode
-    if (intakeMode === 'PHOTO' && imageBlob) {
-      if (visionResult?.imageEvidenceStatus === 'IRRELEVANT_IMAGE' || visionResult?.imageEvidenceStatus === 'IMAGE_QUALITY_FAILED') {
-        alert('Please replace the rejected image before submitting your report.');
-        setIsSubmitting(false);
-        return;
-      }
-      
-      try {
-        const { firebaseConfig } = getCloudConfig();
-        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-        const storage = getStorage(app);
-        const reportId = `rep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        finalStoragePath = `citizen-reports/${reportId}/evidence.jpg`;
-        const storageRef = ref(storage, finalStoragePath);
-        await uploadBytes(storageRef, imageBlob);
-        setImageStoragePath(finalStoragePath);
-      } catch (err) {
-        console.error("Storage upload failed during submission:", err);
-      }
-    }
-
     await submitReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
       category: intakeMode === 'VOICE' ? category : (visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category),
-      priorityLevel: 'HIGH',
+      priorityLevel: intakeMode === 'VOICE' ? voicePriorityLevel : (visionResult?.priorityLevel || 'HIGH'),
       priorityScore: intakeMode === 'VOICE' ? voiceConfidenceScore : (visionResult?.confidenceScore || 94),
       detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (intakeMode === 'VOICE' ? (voiceDetectedIssue || activeTranscriptText.slice(0, 60) || 'Spoken Civic Complaint') : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Reported defect'))),
-      urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.shortSummary || visionResult?.detectedIssue || 'Civic infrastructure report') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
-      imageStoragePath: intakeMode === 'PHOTO' ? finalStoragePath : undefined,
+      urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.urgencyReasoning || visionResult?.detectedIssue || 'Civic infrastructure report') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
+      photoBase64: intakeMode === 'PHOTO' ? photoPreviewUrl : undefined,
       intakeType: intakeMode,
       location: {
         lat: parseFloat(coordinates.lat) || 28.6517,
@@ -514,7 +407,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
             </span>
             <h2 className="text-2xl font-black text-slate-900 mt-3">Complaint Published & Verified Successfully!</h2>
             <p className="text-sm text-slate-600 font-medium mt-2 leading-relaxed">
-              Your complaint has been audited by <strong className="text-teal-700">Gemini Multimodal on Vertex AI</strong>, locked to GPS coordinates{' '}
+              Your complaint has been audited by <strong className="text-teal-700">Gemini 3.1 Pro AI</strong>, locked to GPS coordinates{' '}
               <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-slate-800">{coordinates.lat}° N, {coordinates.lng}° E</code>, and{' '}
               <strong>clustered (+1 complaint incremented)</strong> on our interactive cartographic map.
             </p>
@@ -526,7 +419,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
             </div>
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="text-slate-500">Assigned Priority Level:</span>
-              <span className="font-extrabold text-amber-600">Priority assessed by ClusterEngine (Score: {visionResult?.confidenceScore || 94}/100)</span>
+              <span className="font-extrabold text-amber-600">{visionResult?.priorityLevel || 'CRITICAL'} (Score: {visionResult?.confidenceScore || 94}/100)</span>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -534,7 +427,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
               <MapPin className="w-4 h-4" />
               View Complaint on Live GIS Map
             </button>
-            <button onClick={() => { setIsSubmitted(false); setPhotoUploaded(false); setVisionResult(null); setTextNote('Write your problem here...'); setPhotoNote(''); setImageStoragePath(''); }} className="py-3 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all">
+            <button onClick={() => { setIsSubmitted(false); setPhotoUploaded(false); setVisionResult(null); setTextNote('Write your problem here...'); setPhotoNote(''); }} className="py-3 px-6 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all">
               + Submit Another Complaint
             </button>
           </div>
