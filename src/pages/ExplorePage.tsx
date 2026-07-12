@@ -27,6 +27,7 @@ import {
 import type { Hotspot, Region } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
+import { getReportTimestampMs } from '../services/CitizenReportService';
 import { useLanguage } from '../context/LanguageContext';
 
 // Helper component to smoothly center map when active region changes or hotspot clicked
@@ -195,7 +196,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
     const distName = region.district.replace(' District', '').trim().toLowerCase();
     const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
 
-    return reports.filter((rep) => {
+    const filtered = reports.filter((rep) => {
       const matchesRegion = isAll
         ? true
         : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
@@ -210,6 +211,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (rep.description || rep.rawText || rep.aiSummary || '').toLowerCase().includes(searchQuery.toLowerCase());
       return matchesRegion && matchesCategory && matchesSearch;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const timeA = getReportTimestampMs(a);
+      const timeB = getReportTimestampMs(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.priorityScore || b.aiConfidence || 90) - (a.priorityScore || a.aiConfidence || 90);
     });
   }, [reports, selectedCategory, searchQuery, region]);
 

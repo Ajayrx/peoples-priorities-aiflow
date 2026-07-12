@@ -17,7 +17,7 @@ import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
 import type { CitizenReport, Hotspot, CategoryType, PriorityLevel, DashboardStats } from '../types';
 import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
-import { runClusterEngine } from './ClusterEngine';
+import { runClusterEngine, getReportTimestampMs } from './ClusterEngine';
 import type { LiveCitizenReport } from './liveCloudBus';
 
 const STORAGE_KEY_REPORTS = 'peoples_priorities_live_reports_v1';
@@ -31,6 +31,8 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
     console.warn('BroadcastChannel not supported in this context', e);
   }
 }
+
+export { getReportTimestampMs } from './ClusterEngine';
 
 async function compressPhotoForCloudSync(base64Str?: string): Promise<string | undefined> {
   if (!base64Str || typeof window === 'undefined') return base64Str;
@@ -248,6 +250,9 @@ class CitizenReportServiceSingleton {
    */
   public getRankedPriorityList(reports: CitizenReport[]): CitizenReport[] {
     return [...reports].sort((a, b) => {
+      const timeA = getReportTimestampMs(a);
+      const timeB = getReportTimestampMs(b);
+      if (timeB !== timeA) return timeB - timeA;
       const scoreA = a.priorityScore || a.aiConfidence || 0;
       const scoreB = b.priorityScore || b.aiConfidence || 0;
       return scoreB - scoreA;
@@ -565,6 +570,9 @@ class CitizenReportServiceSingleton {
     });
 
     return Array.from(map.values()).sort((a, b) => {
+      const timeA = getReportTimestampMs(a);
+      const timeB = getReportTimestampMs(b);
+      if (timeB !== timeA) return timeB - timeA;
       const scoreA = a.priorityScore || a.aiConfidence || 90;
       const scoreB = b.priorityScore || b.aiConfidence || 90;
       return scoreB - scoreA;

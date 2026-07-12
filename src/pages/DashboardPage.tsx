@@ -13,6 +13,7 @@ import {
 import type { Region, Hotspot, CitizenReport } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
+import { getReportTimestampMs } from '../services/CitizenReportService';
 import { useLanguage } from '../context/LanguageContext';
 
 interface DashboardPageProps {
@@ -99,8 +100,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
   }, [reports, region]);
 
   const displayedPriorityReports = useMemo(() => {
-    if (categoryFilter === 'ALL') return allCanonicalReports;
-    return allCanonicalReports.filter((rep) => rep.category === categoryFilter);
+    const filtered = categoryFilter === 'ALL'
+      ? allCanonicalReports
+      : allCanonicalReports.filter((rep) => rep.category === categoryFilter);
+
+    return [...filtered].sort((a, b) => {
+      const timeA = getReportTimestampMs(a);
+      const timeB = getReportTimestampMs(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.priorityScore || b.aiConfidence || 90) - (a.priorityScore || a.aiConfidence || 90);
+    });
   }, [allCanonicalReports, categoryFilter]);
 
   const totalBeneficiaries = useMemo(() => {

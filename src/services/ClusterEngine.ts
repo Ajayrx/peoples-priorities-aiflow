@@ -59,6 +59,60 @@ export function getReportAgeDays(report: CitizenReport): number {
   return 1; // Default recent
 }
 
+export function getReportTimestampMs(report: CitizenReport): number {
+  if (report.createdAt) {
+    if (typeof report.createdAt === 'number' && report.createdAt > 1000000000) {
+      return report.createdAt > 100000000000 ? report.createdAt : report.createdAt * 1000;
+    }
+    if (typeof (report.createdAt as any)?.toDate === 'function') {
+      const d = (report.createdAt as any).toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+    }
+    if ((report.createdAt as any)?.seconds !== undefined) {
+      return (report.createdAt as any).seconds * 1000;
+    }
+    if ((report.createdAt as any) instanceof Date && !isNaN((report.createdAt as any).getTime())) {
+      return (report.createdAt as any).getTime();
+    }
+    if (typeof report.createdAt === 'string') {
+      const parsed = Date.parse(report.createdAt);
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+
+  if (report.timestamp && typeof report.timestamp === 'string') {
+    const tsLower = report.timestamp.toLowerCase();
+    if (tsLower.includes('just now')) return Date.now();
+    if (tsLower.includes('min')) {
+      const m = tsLower.match(/(\d+)\s*min/);
+      const mins = m ? parseInt(m[1], 10) : 5;
+      return Date.now() - mins * 60 * 1000;
+    }
+    if (tsLower.includes('hour') || tsLower.includes('hr')) {
+      const m = tsLower.match(/(\d+)\s*(hour|hr)/);
+      const hrs = m ? parseInt(m[1], 10) : 1;
+      return Date.now() - hrs * 60 * 60 * 1000;
+    }
+    if (tsLower.includes('day')) {
+      const m = tsLower.match(/(\d+)\s*day/);
+      const days = m ? parseInt(m[1], 10) : 1;
+      return Date.now() - days * 24 * 60 * 60 * 1000;
+    }
+    const parsed = Date.parse(report.timestamp);
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  if (report.id && typeof report.id === 'string') {
+    const m = report.id.match(/(\d{13})/);
+    if (m) {
+      const num = Number(m[1]);
+      if (num > 1600000000000 && num < 2500000000000) return num;
+    }
+  }
+
+  return 0;
+}
+
 /**
  * Checks if two citizen reports belong to the same category and semantic/geographic bucket.
  * 1. Must match Category exactly (e.g. Road vs Road). Never cluster Road + Water + School.
@@ -360,6 +414,14 @@ export function runClusterEngine(allReports: CitizenReport[], baseHotspots: Hots
   // Sort clusters descending by priority score
   clusters.sort((a, b) => b.priorityScore - a.priorityScore);
   emergingClusters.sort((a, b) => b.priorityScore - a.priorityScore);
+
+  // Sort individual reports strictly descending by date / creation timestamp (latest complaint on top)
+  individualReports.sort((a, b) => {
+    const timeA = getReportTimestampMs(a);
+    const timeB = getReportTimestampMs(b);
+    if (timeB !== timeA) return timeB - timeA;
+    return (b.priorityScore || b.aiConfidence || 90) - (a.priorityScore || a.aiConfidence || 90);
+  });
 
   return {
     clusters,
