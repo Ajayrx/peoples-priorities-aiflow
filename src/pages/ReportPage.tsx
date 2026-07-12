@@ -629,7 +629,9 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                     </div>
 
                     {/* Record zone */}
-                    <div className="flex-1 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 flex flex-col items-center justify-center gap-4 py-12 min-h-[220px]">
+                    <div className={`flex-1 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-4 py-12 min-h-[220px] transition-colors ${
+                      isRecording ? 'border-rose-300 bg-rose-50/50' : 'border-indigo-200 bg-indigo-50/50'
+                    }`}>
                       <button type="button" onClick={handleSimulateRecord}
                         className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all ${
                           isRecording ? 'bg-rose-500 text-white ring-4 ring-rose-400/30 animate-pulse'
@@ -638,13 +640,40 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                         }`}>
                         <Mic className={`w-7 h-7 ${isRecording ? 'animate-bounce' : ''}`} />
                       </button>
+
+                      {/* Sound wave animation — only visible while recording */}
+                      {isRecording && (
+                        <div className="flex items-end gap-[3px] h-8">
+                          {[0.4, 0.7, 1, 0.7, 1, 0.5, 0.8, 0.6, 1, 0.4].map((scale, i) => (
+                            <span
+                              key={i}
+                              style={{
+                                animationDelay: `${i * 80}ms`,
+                                animationDuration: `${600 + i * 60}ms`,
+                              }}
+                              className="inline-block w-[4px] bg-rose-500 rounded-full origin-bottom"
+                              // inline keyframe via tw animate-bounce won't work for each bar height
+                              // use inline style animation instead
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.animation = `voiceBarPulse ${600 + i * 60}ms ease-in-out ${i * 80}ms infinite alternate`;
+                                  el.style.height = `${Math.round(scale * 28)}px`;
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+
                       <div className="text-center">
                         <p className="font-bold text-sm text-slate-800">
                           {isRecording ? t('report.voice.rec') : voiceRecorded ? t('report.voice.recorded') : t('report.voice.click')}
                         </p>
                         <p className="text-xs text-slate-400 font-mono mt-1">
-                          {isRecording ? `00:${recordingSeconds < 10 ? '0' + recordingSeconds : recordingSeconds} / 01:00`
-                            : voiceRecorded ? 'Real Microphone Audio · Gemini Multilingual Understanding'
+                          {isRecording
+                            ? `00:${recordingSeconds < 10 ? '0' + recordingSeconds : recordingSeconds} / 01:00`
+                            : voiceRecorded
+                            ? t('report.voice.speak')
                             : 'Supports English, Odia, Hindi & Telugu'}
                         </p>
                       </div>

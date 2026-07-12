@@ -123,9 +123,12 @@
   }
 }
 
+
 .animate-scaleUp {
   animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-
-
+@keyframes voiceBarPulse {
+  0%   { transform: scaleY(0.3); opacity: 0.5; }
+  100% { transform: scaleY(1);   opacity: 1;   }
+}
