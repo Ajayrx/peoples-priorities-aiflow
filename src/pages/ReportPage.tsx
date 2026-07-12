@@ -621,21 +621,11 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                 {/* VOICE MODE */}
                 {intakeMode === 'VOICE' && (
                   <div className="flex flex-col gap-4 flex-1">
-                    <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
-                      <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                        <Volume2 className="w-4 h-4 text-teal-600" />
-                        {t('report.voice.lang')}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {(['ODIA', 'HINDI', 'TELUGU', 'ENGLISH'] as const).map((lang) => (
-                          <button key={lang} type="button" onClick={() => setSelectedLanguage(lang)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                              selectedLanguage === lang ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:border-teal-300'
-                            }`}>
-                            {lang === 'ODIA' ? 'Odia / ଓଡ଼ିଆ' : lang === 'HINDI' ? 'Hindi / हिन्दी' : lang === 'TELUGU' ? 'Telugu / తెలుగు' : 'English'}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <Volume2 className="w-4 h-4 text-teal-600 shrink-0" />
+                      <span className="text-xs text-slate-500 font-medium">
+                        Languages available: <strong className="text-slate-700">Hindi, Odia, Telugu, English</strong>
+                      </span>
                     </div>
 
                     {/* Record zone */}
@@ -717,12 +707,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                         <p className="text-sm font-serif italic text-slate-700 bg-white p-3.5 rounded-lg border border-teal-100 leading-relaxed shadow-sm">
                           "{activeTranscriptText}"
                         </p>
-                        {voiceDetectedIssue && (
-                          <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-teal-100">
-                            <span>AI Tag: <strong className="text-slate-700">{voiceDetectedIssue}</strong></span>
-                            <span>Category: <strong className="text-teal-700">{category}</strong></span>
-                          </div>
-                        )}
+
                       </div>
                     )}
                   </div>
