@@ -180,20 +180,33 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
   let unsubFirestore: (() => void) | null = null;
   const db = getSafeFirestoreInstance();
 
-  const emitMergedReports = async (cloudReports: LiveCitizenReport[] = []) => {
+  const emitMergedReports = async (cloudReports: LiveCitizenReport[] | null = null) => {
     // Read from both high-capacity IndexedDB + localStorage
     const indexedDBReports = await getAllReportsFromIndexedDB();
     const local = getLocalLiveReports();
 
-    // Combine unique reports across Cloud, IndexedDB, and localStorage
+    if (cloudReports !== null) {
+      // 🌟 STRICT CLOUD-ONLY SYNC (Fixes mismatched counts across devices) 🌟
+      // If we received a snapshot from Firestore, it is the absolute source of truth.
+      // We MUST NOT append local-only reports, otherwise devices that created reports will show more reports than others.
+      // Firestore's onSnapshot automatically includes local pending writes even if offline.
+      const enrichedCloudReports = cloudReports.map(cloudItem => {
+        // Find matching local report to restore high-res photo that might have been truncated for Firestore quota
+        const localMatch = indexedDBReports.find(local => local.id === cloudItem.id);
+        if (localMatch && localMatch.photoBase64 && localMatch.photoBase64.length > (cloudItem.photoBase64?.length || 0)) {
+          return { ...cloudItem, photoBase64: localMatch.photoBase64 };
+        }
+        return cloudItem;
+      });
+      onUpdate(enrichedCloudReports);
+      return;
+    }
+
+    // Fallback: Offline mode (no cloud snapshot received yet, or Firebase is disabled)
     const allUniqueMap = new Map<string, LiveCitizenReport>();
 
     // Put IndexedDB items first (they contain full high-res photos)
     for (const item of indexedDBReports) {
-      if (item.id) allUniqueMap.set(item.id, item);
-    }
-    // Put cloud items
-    for (const item of cloudReports) {
       if (item.id) allUniqueMap.set(item.id, item);
     }
     // Put localStorage items if not already present
@@ -242,12 +255,12 @@ export function subscribeToLiveReports(onUpdate: (reports: LiveCitizenReport[]) 
 
   // Local event listeners
   const handleLocalEvent = () => {
-    emitMergedReports([]);
+    if (!db) emitMergedReports(null);
   };
 
   const handleBroadcast = (event: MessageEvent) => {
     if (event.data?.type === 'NEW_REPORT') {
-      emitMergedReports([]);
+      if (!db) emitMergedReports(null);
     }
   };
 
