@@ -197,9 +197,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 5. Validate MIME type
-  const allowedMimes = ['image/jpeg', 'image/webp'];
+  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
   if (!allowedMimes.includes(imageMimeType)) {
-    return res.status(415).json({ error: `Unsupported image type: ${imageMimeType}. Use JPEG or WebP.` });
+    return res.status(415).json({ error: `Unsupported image type: ${imageMimeType}. Use JPEG, PNG, or WebP.` });
   }
 
   if (!imageBase64 || imageBase64.length < 100) {
@@ -213,19 +213,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash';
   const prompt = `You are an infrastructure evidence analyst for a citizen grievance platform in rural India.
 
-Analyze this citizen-uploaded photo and describe ONLY what is directly visible.
+Analyze this actual citizen-uploaded photo. You must follow a STRICT 3-step order:
 
-Do NOT infer problems that are not clearly visible.
-Do NOT classify infrastructure based on color, texture alone, or scene ambiguity.
-Do NOT identify a road problem from a keyboard, monitor, document, or indoor scene.
+STEP 1: Classify the dominant scene.
+Allowed scene types: ROAD, DRAINAGE, WATER_INFRASTRUCTURE, SCHOOL, HEALTHCARE, ELECTRICAL_INFRASTRUCTURE, AGRICULTURE, BUILDING, PERSON, SCREEN, DOCUMENT, INDOOR_OBJECT, BLANK, OTHER.
+
+STEP 2: Determine whether a visible civic development issue actually exists in the scene.
+Do NOT infer problems that are not clearly visible. Do NOT classify infrastructure based on color or texture alone.
+
+STEP 3: ONLY IF developmentIssueVisible is true, detect the issue, suggest a category, estimate severity, and list visible evidence.
+If the scene is a PERSON, SCREEN, DOCUMENT, INDOOR_OBJECT, or BLANK, developmentIssueVisible MUST be false.
 
 Respond ONLY with valid JSON matching this schema exactly:
 {
-  "sceneType": "one of: ROAD | STREET | DRAINAGE | WATER_INFRASTRUCTURE | SCHOOL | HEALTHCARE_FACILITY | ELECTRICAL_INFRASTRUCTURE | BUILDING | AGRICULTURE | COMPUTER_SCREEN | KEYBOARD | DOCUMENT | PERSON | INDOOR_OBJECT | UNKNOWN",
+  "sceneType": "...",
   "developmentIssueVisible": boolean,
   "detectedIssue": "brief description of the visible issue, or null if none",
   "suggestedCategory": "one of: ROAD | SCHOOLS | HEALTHCARE | WATER | DRAINAGE | ELECTRICITY | GARBAGE | STREET_LIGHTS | AGRICULTURE | null",
-  "visualSeverity": "one of: CRITICAL | HIGH | MEDIUM | LOW | UNKNOWN",
+  "visualSeverity": "one of: CRITICAL | HIGH | MEDIUM | LOW | UNKNOWN | null",
   "confidenceScore": number between 0.0 and 1.0,
   "visualEvidence": ["array of specific visible observations"],
   "rejectionReason": "null if image is relevant, or brief reason if irrelevant"
@@ -269,8 +274,15 @@ Respond ONLY with valid JSON matching this schema exactly:
   }
 
   // 8. Validate and normalise Gemini output
-  const sceneType = typeof geminiData.sceneType === 'string' ? geminiData.sceneType : 'UNKNOWN';
-  const developmentIssueVisible = Boolean(geminiData.developmentIssueVisible);
+  const sceneType = typeof geminiData.sceneType === 'string' ? geminiData.sceneType.toUpperCase() : 'UNKNOWN';
+  let developmentIssueVisible = Boolean(geminiData.developmentIssueVisible);
+  
+  // SERVER-SIDE GUARD: Never trust Gemini to find infrastructure on irrelevant scenes
+  const strictIrrelevantScenes = ['PERSON', 'SCREEN', 'DOCUMENT', 'INDOOR_OBJECT', 'BLANK', 'COMPUTER_SCREEN', 'KEYBOARD'];
+  if (strictIrrelevantScenes.includes(sceneType)) {
+    developmentIssueVisible = false;
+  }
+
   const detectedIssue = typeof geminiData.detectedIssue === 'string' ? geminiData.detectedIssue : '';
   const suggestedCategoryRaw = geminiData.suggestedCategory || '';
   const suggestedCategory = normaliseCategory(suggestedCategoryRaw);
@@ -296,12 +308,27 @@ Respond ONLY with valid JSON matching this schema exactly:
   }
 
   // 10. Derive canonical imageEvidenceStatus
-  const imageEvidenceStatus: ImageEvidenceStatus = deriveEvidenceStatus(
+  let imageEvidenceStatus: ImageEvidenceStatus = deriveEvidenceStatus(
     sceneType,
     developmentIssueVisible,
     matchLevel,
     confidenceScore,
   );
+
+  if (strictIrrelevantScenes.includes(sceneType) || !developmentIssueVisible) {
+    imageEvidenceStatus = 'IRRELEVANT_IMAGE';
+  }
+
+  // 11. Development logging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('\n--- [DEV] GEMINI IMAGE ANALYSIS ---');
+    console.log('Model:', geminiModel);
+    console.log('Received MIME:', imageMimeType);
+    console.log('Received Bytes:', Math.round((imageBase64.length * 3) / 4));
+    console.log('Gemini JSON:', JSON.stringify(geminiData, null, 2));
+    console.log('Final Status:', imageEvidenceStatus);
+    console.log('-----------------------------------\n');
+  }
 
   // 11. Return structured response — Gemini does NOT calculate priority
   return res.status(200).json({

@@ -13,9 +13,6 @@
  * Supported languages: Odia, Hindi, Telugu, English
  */
 
-import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getApps, initializeApp } from 'firebase/app';
-import { getCloudConfig } from './cloudConfig';
 import type { CategoryType } from '../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -36,25 +33,6 @@ export interface GeminiAudioResult {
   error?: string;
 }
 
-// ── Firebase Auth helper ──────────────────────────────────────────────────────
-
-async function getFirebaseIdToken(): Promise<string | null> {
-  try {
-    const { firebaseConfig } = getCloudConfig();
-    const app = getApps().length === 0
-      ? initializeApp(firebaseConfig)
-      : getApps()[0];
-    const auth = getAuth(app);
-    if (!auth.currentUser) {
-      await signInAnonymously(auth);
-    }
-    return await auth.currentUser!.getIdToken();
-  } catch (err) {
-    console.error('Failed to get Firebase ID token:', err);
-    return null;
-  }
-}
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -70,7 +48,7 @@ export async function transcribeAndTranslateAudio(
   const AI_FAILED: GeminiAudioResult = {
     status: 'AI_ANALYSIS_FAILED',
     isRealApiEval: false,
-    error: 'Audio analysis is temporarily unavailable. Your report can still be submitted.',
+    error: 'AI audio analysis is temporarily unavailable.',
   };
 
   // 1. Reject empty recordings early
@@ -78,43 +56,35 @@ export async function transcribeAndTranslateAudio(
     return {
       status: 'NO_SPEECH_DETECTED',
       isRealApiEval: false,
-      error: 'No speech detected. Please try recording again.',
+      error: 'No speech detected. Please record again.',
     };
   }
 
-  // 2. Get Firebase Auth token
-  const idToken = await getFirebaseIdToken();
-  if (!idToken) {
-    return { ...AI_FAILED, error: 'Authentication required for audio analysis' };
-  }
-
-  // 3. Build multipart form data
+  // 2. Build multipart form data
   const formData = new FormData();
   formData.append('audioBlob', audioBlob, 'complaint.webm');
   formData.append('selectedLanguage', selectedLanguage);
 
-  // 4. POST to Vercel serverless endpoint
+  // 3. POST to Vercel serverless endpoint
   let responseData: any;
   try {
     const response = await fetch('/api/analyze-report-audio', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        // Do NOT set Content-Type — browser sets it with boundary for FormData
-      },
       body: formData,
     });
 
     if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.error(`/api/analyze-report-audio ${response.status}:`, errText);
-      return { ...AI_FAILED, error: `Endpoint error ${response.status}` };
+      console.error(`Vercel audio API error: ${response.status}`);
+      if (response.status === 413 || response.status === 415 || response.status === 400) {
+        return { ...AI_FAILED, error: 'Audio recording could not be processed.' };
+      }
+      return AI_FAILED;
     }
 
     responseData = await response.json();
-  } catch (err: any) {
-    console.error('Network error calling /api/analyze-report-audio:', err);
-    return { ...AI_FAILED, error: err?.message || 'Network error' };
+  } catch (err) {
+    console.error('Vercel audio network error:', err);
+    return { ...AI_FAILED, error: 'Unable to connect to voice analysis.' };
   }
 
   // 5. Handle explicit failure states from backend

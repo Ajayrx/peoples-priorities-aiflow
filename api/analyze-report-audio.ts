@@ -19,6 +19,12 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// ── In-Memory Rate Limiter (Per Vercel Instance Burst Protection) ─────────────
+// Note: This is NOT global distributed rate limiting. It only provides basic
+// burst protection per cold-start instance. For global limits, use Upstash/Redis.
+const rateLimitMap = new Map<string, { count: number, resetTime: number }>();
+const MAX_REQUESTS_PER_MINUTE = 5;
+
 // ── Canonical application categories ──────────────────────────────────────────
 const CANONICAL_CATEGORIES = [
   'ROAD', 'SCHOOLS', 'HEALTHCARE', 'WATER',
@@ -47,27 +53,6 @@ function getCleanMimeType(raw: string): string {
   return supported.includes(base) ? base : 'audio/webm';
 }
 
-// ── Firebase ID token verification ────────────────────────────────────────────
-async function verifyFirebaseToken(token: string): Promise<{ uid: string } | null> {
-  const apiKey = process.env.FIREBASE_WEB_API_KEY;
-  if (!apiKey) { console.error('FIREBASE_WEB_API_KEY not set'); return null; }
-  try {
-    const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: token }),
-      }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const uid = data?.users?.[0]?.localId;
-    return uid ? { uid } : null;
-  } catch {
-    return null;
-  }
-}
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -76,12 +61,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 2. Firebase Auth token verification
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token) return res.status(401).json({ error: 'Missing Authorization token' });
-  const tokenPayload = await verifyFirebaseToken(token);
-  if (!tokenPayload) return res.status(403).json({ error: 'Invalid or expired Firebase ID token' });
+  // 2. Rate Limiting (Per-Instance)
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 'unknown_ip';
+  const now = Date.now();
+  const rateRecord = rateLimitMap.get(clientIp);
+
+  if (rateRecord && now < rateRecord.resetTime) {
+    if (rateRecord.count >= MAX_REQUESTS_PER_MINUTE) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    rateRecord.count++;
+  } else {
+    rateLimitMap.set(clientIp, { count: 1, resetTime: now + 60000 });
+  }
+
+  // Periodic cleanup of rate limit map to prevent memory leaks
+  if (rateLimitMap.size > 1000) {
+    for (const [ip, record] of rateLimitMap.entries()) {
+      if (now > record.resetTime) rateLimitMap.delete(ip);
+    }
+  }
 
   // 3. Gemini API key guard
   const geminiApiKey = process.env.GEMINI_API_KEY;

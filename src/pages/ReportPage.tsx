@@ -126,6 +126,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('https://images.unsplash.com/photo-1584463667104-122ff1129b11?auto=format&fit=crop&w=600&q=80');
   const [isEvaluatingPhoto, setIsEvaluatingPhoto] = useState<boolean>(false);
   const [visionResult, setVisionResult] = useState<GeminiVisionResult | null>(null);
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imageStoragePath, setImageStoragePath] = useState<string>('');
 
   // Text state
@@ -369,10 +370,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Generate unique report ID for this submission early to use in storage path
-    const reportId = `rep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    // Note: reportId is used locally for storage path only
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       const rawBase64 = event.target?.result as string;
@@ -415,26 +412,16 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
 
           canvas.toBlob(async (blob) => {
             if (blob) {
+              setImageBlob(blob);
               try {
-                // 1. Upload to Firebase Storage
-                const { firebaseConfig } = getCloudConfig();
-                const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-                const storage = getStorage(app);
-                
-                const storagePath = `citizen-reports/${reportId}/evidence.jpg`;
-                setImageStoragePath(storagePath);
-                
-                const storageRef = ref(storage, storagePath);
-                await uploadBytes(storageRef, blob);
-
-                // 2. Call evaluateLocalityPhoto with blob and complaint category
+                // Call evaluateLocalityPhoto directly with blob (No storage upload yet)
                 const result = await evaluateLocalityPhoto(blob, category);
                 setVisionResult(result);
                 if (result.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(result.category)) {
                   setCategory(result.category);
                 }
               } catch (err) {
-                console.error("Storage upload or analysis failed:", err);
+                console.error("Image analysis failed:", err);
                 setVisionResult({
                   imageEvidenceStatus: 'AI_ANALYSIS_FAILED',
                   confidenceScore: 0,
@@ -465,6 +452,31 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     e.preventDefault();
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 750));
+
+    let finalStoragePath = imageStoragePath;
+
+    // Handle lazy upload for PHOTO mode
+    if (intakeMode === 'PHOTO' && imageBlob) {
+      if (visionResult?.imageEvidenceStatus === 'IRRELEVANT_IMAGE' || visionResult?.imageEvidenceStatus === 'IMAGE_QUALITY_FAILED') {
+        alert('Please replace the rejected image before submitting your report.');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      try {
+        const { firebaseConfig } = getCloudConfig();
+        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+        const storage = getStorage(app);
+        const reportId = `rep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        finalStoragePath = `citizen-reports/${reportId}/evidence.jpg`;
+        const storageRef = ref(storage, finalStoragePath);
+        await uploadBytes(storageRef, imageBlob);
+        setImageStoragePath(finalStoragePath);
+      } catch (err) {
+        console.error("Storage upload failed during submission:", err);
+      }
+    }
+
     await submitReport({
       name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
       category: intakeMode === 'VOICE' ? category : (visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category),
@@ -472,7 +484,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
       priorityScore: intakeMode === 'VOICE' ? voiceConfidenceScore : (visionResult?.confidenceScore || 94),
       detectedIssue: intakeMode === 'PHOTO' && photoNote.trim() ? photoNote.trim().slice(0, 60) : (intakeMode === 'VOICE' ? (voiceDetectedIssue || activeTranscriptText.slice(0, 60) || 'Spoken Civic Complaint') : (visionResult?.detectedIssue || (intakeMode === 'TEXT' ? textNote.slice(0, 60) : 'Reported defect'))),
       urgencyReasoning: intakeMode === 'PHOTO' ? (photoNote.trim() || visionResult?.shortSummary || visionResult?.detectedIssue || 'Civic infrastructure report') : (intakeMode === 'VOICE' ? activeTranscriptText : textNote),
-      imageStoragePath: intakeMode === 'PHOTO' && imageStoragePath ? imageStoragePath : undefined,
+      imageStoragePath: intakeMode === 'PHOTO' ? finalStoragePath : undefined,
       intakeType: intakeMode,
       location: {
         lat: parseFloat(coordinates.lat) || 28.6517,
