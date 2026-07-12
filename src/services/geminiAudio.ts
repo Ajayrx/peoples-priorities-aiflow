@@ -1,4 +1,4 @@
-// Gemini Multilingual Audio Understanding Engine for Voice Grievances
+// Gemini Multilingual Audio Transcription Engine for Voice Grievances
 import { getCloudConfig, hasValidGeminiKey } from './cloudConfig';
 import type { CategoryType, PriorityLevel } from '../types';
 
@@ -12,18 +12,35 @@ export interface GeminiAudioResult {
   error?: string;
 }
 
-// Helper: Convert Blob to clean Base64 string without data URL header
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+/**
+ * Convert a Blob to a pure base64 string using ArrayBuffer.
+ * This is the only reliable method in browsers — FileReader.readAsDataURL
+ * can produce malformed base64 when the blob MIME type contains codec params.
+ */
+async function blobToBase64(blob: Blob): Promise<string> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  // Process in chunks to avoid call-stack overflow on large audio
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Returns a clean MIME type accepted by Gemini (strips codec params).
+ * Maps common browser MediaRecorder output types to Gemini-supported types.
+ */
+function getCleanMimeType(rawType: string): string {
+  if (!rawType) return 'audio/webm';
+  const base = rawType.split(';')[0].trim().toLowerCase();
+  // Gemini supports: audio/wav, audio/mp3, audio/aiff, audio/aac, audio/ogg,
+  // audio/flac, audio/webm, audio/mp4
+  const SUPPORTED = ['audio/wav', 'audio/mp3', 'audio/aac', 'audio/ogg',
+                     'audio/flac', 'audio/webm', 'audio/mp4', 'audio/mpeg'];
+  return SUPPORTED.includes(base) ? base : 'audio/webm';
 }
 
 export async function transcribeAndTranslateAudio(
@@ -33,63 +50,7 @@ export async function transcribeAndTranslateAudio(
 ): Promise<GeminiAudioResult> {
   const config = getCloudConfig();
 
-  // If audio is practically empty (0 bytes) and no fallback text exists
-  if ((!audioBlob || audioBlob.size < 500) && (!fallbackText || fallbackText.trim() === '')) {
-    return {
-      englishTranscript: 'No speech detected. Please try again.',
-      category: 'Road',
-      detectedIssue: 'No Speech Detected',
-      priorityLevel: 'MEDIUM',
-      confidenceScore: 0,
-      isRealApiEval: false,
-      error: 'No speech detected. Please try again.',
-    };
-  }
-
-  let base64Audio = '';
-  let mimeType = 'audio/webm';
-  if (audioBlob && audioBlob.size >= 500) {
-    try {
-      base64Audio = await blobToBase64(audioBlob);
-      mimeType = audioBlob.type ? audioBlob.type.split(';')[0] : 'audio/webm';
-    } catch (err) {
-      console.warn('Failed to encode audio blob to base64:', err);
-    }
-  }
-
-  const languageLabel =
-    selectedLanguage === 'ODIA'
-      ? 'Odia / ଓଡ଼ିଆ'
-      : selectedLanguage === 'HINDI'
-      ? 'Hindi / हिन्दी'
-      : selectedLanguage === 'TELUGU'
-      ? 'Telugu / తెలుగు'
-      : 'English';
-
-  const promptText = `You are an expert multilingual AI audio analysis, transcription, and translation engine for a citizen grievance platform in India.
-The citizen recorded a voice complaint into their microphone. The selected input language is: ${selectedLanguage} (${languageLabel}).
-${fallbackText && fallbackText.trim() !== '' ? `The browser's preliminary speech recognition captured this text snippet: "${fallbackText.trim()}"` : ''}
-
-Your strict responsibility is:
-1. Listen carefully to the actual audio recording (and check the preliminary text if audio is noisy).
-2. If the audio has NO speech detected (only silence, wind, background static, or unclear muffle with zero identifiable words), respond EXACTLY with JSON where "noSpeech" is true and "englishTranscript" is "No speech detected. Please try again."
-3. If the citizen spoke in Odia, Hindi, Telugu, or any regional language, transcribe what they said and faithfully TRANSLATE the meaning into clear, natural, grammatically correct ENGLISH complaint text while preserving exact factual details (such as road washout, water supply stopped for days, school roof leak, etc.).
-4. If the citizen spoke in English, transcribe and clean up the spoken content into clear English complaint text.
-5. Analyze the resulting English complaint text to categorize the issue into ONE of: "Road", "Drainage", "Water", "Schools", "Healthcare", or "Electricity".
-6. Determine a concise 3-to-6 word title ("detectedIssue") summarizing the complaint (for example: "Severe Village Water Supply Shortage" or "Damaged School Approach Road").
-7. Determine the "priorityLevel" ("CRITICAL", "HIGH", or "MEDIUM") and a "confidenceScore" (85 to 98) based on urgency and clarity.
-
-Respond ONLY with a valid JSON object matching this exact schema:
-{
-  "noSpeech": boolean (true ONLY if no speech/words were detected),
-  "englishTranscript": string (the faithful English complaint transcript of what the citizen spoke, or "No speech detected. Please try again." if noSpeech is true),
-  "category": string (MUST be one of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity"),
-  "detectedIssue": string (concise 3-6 word title in English),
-  "priorityLevel": string ("CRITICAL", "HIGH", or "MEDIUM"),
-  "confidenceScore": number (85 to 98)
-}`;
-
-  // If Gemini API Key is completely missing or invalid, fail fast with a very clear message
+  // ── Guard: API key missing ───────────────────────────────────────────────
   if (!hasValidGeminiKey() || !config.geminiApiKey || config.geminiApiKey.trim().length <= 10) {
     return {
       englishTranscript: '',
@@ -102,7 +63,70 @@ Respond ONLY with a valid JSON object matching this exact schema:
     };
   }
 
-  // 1. Try Gemini Multimodal Audio API (upload audio via inlineData)
+  // ── Guard: truly empty recording ─────────────────────────────────────────
+  if ((!audioBlob || audioBlob.size < 500) && (!fallbackText || fallbackText.trim() === '')) {
+    return {
+      englishTranscript: 'No speech detected. Please try again.',
+      category: 'Road',
+      detectedIssue: 'No Speech Detected',
+      priorityLevel: 'MEDIUM',
+      confidenceScore: 0,
+      isRealApiEval: false,
+      error: 'No speech detected. Please try again.',
+    };
+  }
+
+  // ── Convert audio blob to clean base64 ───────────────────────────────────
+  let base64Audio = '';
+  let mimeType = 'audio/webm';
+  if (audioBlob && audioBlob.size >= 500) {
+    try {
+      base64Audio = await blobToBase64(audioBlob);
+      mimeType = getCleanMimeType(audioBlob.type);
+    } catch (err) {
+      console.warn('Failed to encode audio blob to base64:', err);
+    }
+  }
+
+  const languageLabel =
+    selectedLanguage === 'ODIA'
+      ? 'Odia (ଓଡ଼ିଆ)'
+      : selectedLanguage === 'HINDI'
+      ? 'Hindi (हिन्दी)'
+      : selectedLanguage === 'TELUGU'
+      ? 'Telugu (తెలుగు)'
+      : 'English';
+
+  // ── Build Gemini prompt ───────────────────────────────────────────────────
+  // Goal: transcribe exactly what the user said in their own language.
+  // No forced English translation. User reads & submits in their spoken language.
+  const promptText = `You are an expert multilingual speech transcription AI for a citizen grievance platform in India.
+The citizen spoke into their microphone. Their selected language is: ${selectedLanguage} (${languageLabel}).
+${fallbackText && fallbackText.trim() !== '' ? `Browser speech recognition captured this preliminary snippet: "${fallbackText.trim()}"` : ''}
+
+Your job:
+1. Listen to the audio and transcribe EXACTLY what the citizen said, in the SAME language they spoke.
+   - If they spoke Hindi → transcribe in Hindi.
+   - If they spoke Odia → transcribe in Odia.
+   - If they spoke Telugu → transcribe in Telugu.
+   - If they spoke English → transcribe in English.
+   - Do NOT translate to English. Preserve the original language.
+2. If the audio has NO speech (only silence, static, wind, muffled noise with zero identifiable words), set "noSpeech" to true.
+3. Also categorize the complaint into ONE of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity".
+4. Provide a short 3–6 word issue title in English (for internal tagging only).
+5. Determine priority: "CRITICAL", "HIGH", or "MEDIUM".
+
+Respond ONLY with this exact JSON (no markdown, no extra text):
+{
+  "noSpeech": boolean,
+  "transcript": string,
+  "category": string,
+  "detectedIssue": string,
+  "priorityLevel": string,
+  "confidenceScore": number
+}`;
+
+  // ── Attempt 1: Gemini multimodal audio upload (inlineData) ───────────────
   let lastStatus = 0;
   let lastErrText = '';
 
@@ -143,19 +167,13 @@ Respond ONLY with a valid JSON object matching this exact schema:
 
         if (response.ok) {
           const json = await response.json();
-          let textResult = json.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (textResult) {
-            textResult = textResult
-              .replace(/^```(?:json)?\s*/i, '')
-              .replace(/\s*```$/, '')
-              .trim();
+          let raw = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (raw) {
+            raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
             try {
-              const parsed = JSON.parse(textResult);
-              if (
-                parsed.noSpeech === true ||
-                parsed.englishTranscript === 'No speech detected. Please try again.' ||
-                !parsed.englishTranscript
-              ) {
+              const parsed = JSON.parse(raw);
+
+              if (parsed.noSpeech === true || !parsed.transcript) {
                 return {
                   englishTranscript: 'No speech detected. Please try again.',
                   category: 'Road',
@@ -168,54 +186,55 @@ Respond ONLY with a valid JSON object matching this exact schema:
               }
 
               const rawPriority = parsed.priorityLevel === 'LOW' ? 'MEDIUM' : parsed.priorityLevel;
-              const validCategory = [
-                'Road',
-                'Drainage',
-                'Water',
-                'Schools',
-                'Healthcare',
-                'Electricity',
-              ].includes(parsed.category)
-                ? (parsed.category as CategoryType)
-                : 'Road';
+              const validCategory = (
+                ['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity']
+                  .includes(parsed.category)
+                  ? parsed.category
+                  : 'Road'
+              ) as CategoryType;
 
               return {
-                englishTranscript: parsed.englishTranscript.trim(),
+                englishTranscript: parsed.transcript.trim(),
                 category: validCategory,
                 detectedIssue: parsed.detectedIssue || 'Spoken Civic Complaint',
-                priorityLevel: (['CRITICAL', 'HIGH', 'MEDIUM'].includes(rawPriority)
-                  ? rawPriority
-                  : 'HIGH') as PriorityLevel,
+                priorityLevel: (
+                  ['CRITICAL', 'HIGH', 'MEDIUM'].includes(rawPriority) ? rawPriority : 'HIGH'
+                ) as PriorityLevel,
                 confidenceScore: Number(parsed.confidenceScore) || 95,
                 isRealApiEval: true,
               };
             } catch (jsonErr) {
-              console.warn(`Failed to parse JSON from audio model ${modelName}:`, textResult);
+              console.warn(`JSON parse error from model ${modelName}:`, raw);
             }
           }
         } else {
           lastStatus = response.status;
           lastErrText = await response.text().catch(() => '');
-          console.warn(`Gemini Audio model ${modelName} returned status ${response.status}:`, lastErrText);
+          console.warn(`Gemini Audio [${modelName}] status ${response.status}:`, lastErrText);
         }
       } catch (err: any) {
         lastErrText = err?.message || 'Network fetch error';
-        console.warn(`Network error trying Gemini Audio model ${modelName}:`, err);
+        console.warn(`Network error with Gemini Audio [${modelName}]:`, err);
       }
     }
   }
 
-  // 2. If real audio upload API failed or key rate-limited, check if browser SpeechRecognition captured real words
+  // ── Attempt 2: Text-only fallback via browser SpeechRecognition ──────────
+  // If browser's SpeechRecognition captured words, send those to Gemini text model
   if (fallbackText && fallbackText.trim() !== '' && !fallbackText.includes('No speech')) {
-    // If we have Gemini API key, use text-only model to translate and categorize the recognized words
     if (hasValidGeminiKey() && config.geminiApiKey) {
       try {
         const textEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey.trim()}`;
-        const textPrompt = `A citizen recorded a voice grievance. Preliminary speech recognition recognized this text in ${selectedLanguage}: "${fallbackText.trim()}"
-Translate this faithfully into clean, natural English complaint text. Then categorize into ONE of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity". Provide a 3-6 word title ("detectedIssue") and priority ("CRITICAL", "HIGH", or "MEDIUM").
-Respond ONLY with JSON:
+        const textPrompt = `A citizen spoke a civic grievance. Browser speech recognition captured this text in ${languageLabel}: "${fallbackText.trim()}"
+
+Clean up and keep the text in the same language (do NOT translate to English unless they spoke English).
+Also categorize the complaint into ONE of: "Road", "Drainage", "Water", "Schools", "Healthcare", "Electricity".
+Provide a short 3–6 word issue title in English for internal tagging.
+Determine priority: "CRITICAL", "HIGH", or "MEDIUM".
+
+Respond ONLY with this JSON:
 {
-  "englishTranscript": string,
+  "transcript": string,
   "category": string,
   "detectedIssue": string,
   "priorityLevel": string,
@@ -229,6 +248,7 @@ Respond ONLY with JSON:
             generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
           }),
         });
+
         if (res.ok) {
           const json = await res.json();
           let txt = json.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -236,55 +256,51 @@ Respond ONLY with JSON:
             txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
             const p = JSON.parse(txt);
             return {
-              englishTranscript: p.englishTranscript || fallbackText.trim(),
-              category: (['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity'].includes(p.category) ? p.category : 'Road') as CategoryType,
+              englishTranscript: p.transcript || fallbackText.trim(),
+              category: (
+                ['Road', 'Drainage', 'Water', 'Schools', 'Healthcare', 'Electricity']
+                  .includes(p.category) ? p.category : 'Road'
+              ) as CategoryType,
               detectedIssue: p.detectedIssue || 'Spoken Civic Complaint',
-              priorityLevel: (['CRITICAL', 'HIGH', 'MEDIUM'].includes(p.priorityLevel) ? p.priorityLevel : 'HIGH') as PriorityLevel,
+              priorityLevel: (
+                ['CRITICAL', 'HIGH', 'MEDIUM'].includes(p.priorityLevel) ? p.priorityLevel : 'HIGH'
+              ) as PriorityLevel,
               confidenceScore: p.confidenceScore || 93,
               isRealApiEval: true,
             };
           }
         }
       } catch (textErr) {
-        console.warn('Text fallback translation error:', textErr);
+        console.warn('Text fallback Gemini error:', textErr);
       }
     }
 
-    // If Gemini is offline/unreachable but we have English speech recognized or real text
-    if (selectedLanguage === 'ENGLISH') {
-      return {
-        englishTranscript: fallbackText.trim(),
-        category: 'Road',
-        detectedIssue: 'Spoken Civic Intake',
-        priorityLevel: 'HIGH',
-        confidenceScore: 90,
-        isRealApiEval: false,
-      };
-    }
-
-    // If regional language recognized without Gemini API translation available
+    // Last resort: return browser-captured text as-is (no API needed)
     return {
       englishTranscript: fallbackText.trim(),
       category: 'Road',
-      detectedIssue: `${selectedLanguage === 'ODIA' ? 'Odia' : selectedLanguage === 'HINDI' ? 'Hindi' : 'Telugu'} Spoken Intake`,
+      detectedIssue: 'Spoken Civic Intake',
       priorityLevel: 'HIGH',
-      confidenceScore: 88,
+      confidenceScore: 85,
       isRealApiEval: false,
     };
   }
 
-  // 3. Construct specific actionable error message based on exact failure reason
-  let specificError = 'Audio processing failed: Unable to connect to Gemini Audio API. Please verify your Gemini API key in Cloud Settings and try recording again.';
+  // ── Build specific error message ─────────────────────────────────────────
+  let specificError =
+    'Audio processing failed. Please try recording again or check your Gemini API key in Cloud Settings.';
   if (lastStatus === 403) {
-    specificError = 'Gemini API Key authorization failed (403 Forbidden). Please verify in Google Cloud Console / AI Studio that your API key is active and Generative Language API is enabled.';
+    specificError =
+      'Gemini API Key authorization failed (403). Please verify your key is active in Google AI Studio and that the Generative Language API is enabled.';
   } else if (lastStatus === 429) {
-    specificError = 'Gemini API Rate Limit hit (429 Too Many Requests). Free tier quota temporarily exceeded. Please wait 10 seconds and try recording again, or enter a paid API key.';
+    specificError =
+      'Gemini API Rate Limit hit (429). Free tier quota temporarily exceeded. Wait 10 seconds and try again.';
   } else if (lastStatus === 400) {
-    specificError = `Gemini Audio Processing Error (400 Bad Request): ${lastErrText.slice(0, 150) || 'Invalid audio encoding'}.`;
+    specificError = `Gemini API rejected the audio (400 Bad Request): ${lastErrText.slice(0, 200) || 'Invalid audio payload'}.`;
   } else if (lastStatus === 404) {
-    specificError = `Gemini Audio model endpoint not found (404): ${lastErrText.slice(0, 120)}`;
+    specificError = `Gemini model not found (404): ${lastErrText.slice(0, 120)}`;
   } else if (lastErrText) {
-    specificError = `Gemini Audio Processing Error (${lastStatus || 'Network'}): ${lastErrText.slice(0, 150)}`;
+    specificError = `Gemini Audio Error (${lastStatus || 'Network'}): ${lastErrText.slice(0, 200)}`;
   }
 
   return {

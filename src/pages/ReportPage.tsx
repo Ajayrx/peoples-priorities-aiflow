@@ -672,10 +672,10 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                       <div className="bg-teal-50 border border-teal-200 rounded-xl p-5 flex flex-col items-center justify-center gap-3 text-center animate-pulse">
                         <div className="w-7 h-7 rounded-full border-3 border-teal-600 border-t-transparent animate-spin" />
                         <p className="font-bold text-sm text-teal-900">
-                          Gemini is processing real audio & generating English Complaint Transcript...
+                          Gemini is transcribing your voice recording...
                         </p>
                         <p className="text-xs text-teal-700 font-mono">
-                          {selectedLanguage === 'ODIA' ? 'Translating from Odia / ଓଡ଼ିଆ → English' : selectedLanguage === 'HINDI' ? 'Translating from Hindi / हिन्दी → English' : selectedLanguage === 'TELUGU' ? 'Translating from Telugu / తెలుగు → English' : 'Transcribing spoken English audio'}
+                          {selectedLanguage === 'ODIA' ? 'Listening to Odia / ଓଡ଼ିଆ speech...' : selectedLanguage === 'HINDI' ? 'Listening to Hindi / हिन्दी speech...' : selectedLanguage === 'TELUGU' ? 'Listening to Telugu / తెలుగు speech...' : 'Transcribing spoken English audio...'}
                         </p>
                       </div>
                     )}
@@ -695,17 +695,17 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                       </div>
                     )}
 
-                    {/* English Complaint Transcript Result */}
+                    {/* Voice Transcript Result */}
                     {voiceRecorded && !isRecording && !isProcessingAudio && !audioError && activeTranscriptText !== '' && activeTranscriptText !== 'No speech detected. Please try again.' && (
                       <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-2">
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-teal-800 flex items-center gap-1.5">
                               <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                              English Complaint Transcript
+                              Voice Transcript
                             </span>
                             <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 font-mono text-[11px] font-bold">
-                              {selectedLanguage === 'ODIA' ? 'Translated from Odia' : selectedLanguage === 'HINDI' ? 'Translated from Hindi' : selectedLanguage === 'TELUGU' ? 'Translated from Telugu' : 'Transcribed from English'}
+                              {selectedLanguage === 'ODIA' ? '🎙 Odia / ଓଡ଼ିଆ' : selectedLanguage === 'HINDI' ? '🎙 Hindi / हिन्दी' : selectedLanguage === 'TELUGU' ? '🎙 Telugu / తెలుగు' : '🎙 English'}
                             </span>
                           </div>
                           <button type="button" onClick={handlePlayAudio}
@@ -719,7 +719,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
                         </p>
                         {voiceDetectedIssue && (
                           <div className="flex items-center justify-between text-xs text-slate-500 font-mono pt-1 border-t border-teal-100">
-                            <span>AI Title: <strong className="text-slate-700">{voiceDetectedIssue}</strong></span>
+                            <span>AI Tag: <strong className="text-slate-700">{voiceDetectedIssue}</strong></span>
                             <span>Category: <strong className="text-teal-700">{category}</strong></span>
                           </div>
                         )}
