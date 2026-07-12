@@ -375,7 +375,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 {t('landing.step2.desc')}
               </p>
               <div className="inline-flex text-xs font-mono text-emerald-800 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 font-bold overflow-x-auto">
-                Score = D × S × P × G × U × C × R × Φ
+                {t('landing.step2.badge')}
               </div>
             </div>
 
