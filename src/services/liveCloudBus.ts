@@ -3,7 +3,8 @@ import { initializeApp, getApps } from 'firebase/app';
 import {
   getFirestore,
   collection,
-  addDoc,
+  setDoc,
+  doc,
   onSnapshot,
   query,
   orderBy,
@@ -84,10 +85,10 @@ export async function publishLocalityReport(report: Omit<LiveCitizenReport, 'id'
     };
 
     Promise.race([
-      addDoc(collection(db, 'citizen_reports'), cloudSafeReport),
+      setDoc(doc(db, 'citizen_reports', newReport.id), cloudSafeReport),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Cloud Firestore connection timed out after 6 seconds')), 6000))
-    ]).then((docRef: any) => {
-      console.log('✅ Successfully published verified citizen intake to Google Cloud Firestore! Document ID:', docRef?.id || 'live-doc');
+    ]).then(() => {
+      console.log('✅ Successfully published verified citizen intake to Google Cloud Firestore! Document ID:', newReport.id);
     }).catch((err) => {
       console.warn('Report safely preserved in Local IndexedDB Ledger. Cloud Firestore status:', err.message);
     });
@@ -133,8 +134,9 @@ export async function testCloudFirestoreConnection(): Promise<{ success: boolean
   }
 
   try {
-    const testDoc = await Promise.race([
-      addDoc(collection(db, 'citizen_reports'), {
+    const testDocId = `test-${Date.now()}`;
+    await Promise.race([
+      setDoc(doc(db, 'citizen_reports', testDocId), {
         name: "Verified Citizen Intake (Diagnostic Ping)",
         category: "Road",
         priorityLevel: "HIGH",
@@ -151,7 +153,7 @@ export async function testCloudFirestoreConnection(): Promise<{ success: boolean
 
     return {
       success: true,
-      message: `✅ Success! Connected to Firebase Cloud Firestore ('peoples-priorities-cloud'). Database is live and syncing verified demands across all devices! (Doc ID: ${testDoc.id})`,
+      message: `✅ Success! Connected to Firebase Cloud Firestore ('peoples-priorities-cloud'). Database is live and syncing verified demands across all devices! (Doc ID: ${testDocId})`,
     };
   } catch (err: any) {
     const errMsg = err?.message || String(err);
