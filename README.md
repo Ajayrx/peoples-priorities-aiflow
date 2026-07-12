@@ -19,13 +19,13 @@ It generates transparent, ranked development priorities so governments can make 
 People's Priorities is built to be resilient system where Admin cant delete citizen's Report. 
 
 ### 1. Robust AI Intake Pipelines
-- **Voice Reporting**: The browser captures raw audio via `MediaRecorder` alongside a live heuristic `webkitSpeechRecognition` text hint. Both are sent to a stateless Vercel Node.js backend (`/api/analyze-report-audio`), which securely calls **Gemini 2.5 Flash** to detect the language, transcribe the audio natively, and translate it to an English summary without losing contextual nuance.
-- **Photo Reporting**: The browser captures and compresses an image into a raw JPEG Blob. A custom binary-safe parser on Vercel (`/api/analyze-report-image`) forwards these raw bytes directly to **Gemini Multimodal Ai** for visual verification. If a citizen uploads a selfie instead of a broken road, the AI rejects it instantly (saving database storage) currently working on it to make it better.
+- **Voice Reporting**: The browser captures raw audio via `MediaRecorder` alongside a live heuristic `webkitSpeechRecognition` text hint. Both are sent to a stateless Vercel Node.js backend (`/api/analyze-report-audio`). The backend securely calls **Gemini 2.5 Flash Multimodal** to natively transcribe the audio. If network latency cuts the audio short, the backend dynamically merges the browser's live text hint with the audio stream to ensure no words are lost.
+- **Photo Reporting**: The browser captures and compresses an image into a raw JPEG Blob. A custom binary-safe parser on Vercel (`/api/analyze-report-image`) forwards these exact raw bytes directly to **Gemini Multimodal AI** for visual verification. If a citizen uploads a selfie instead of a broken road, the AI rejects it instantly (protecting database storage and preventing spam).
 
-### 2. Real-Time Sync
-- **Local-First Ledger**: The app uses `IndexedDB` for instant, zero-latency saving of reports on the citizen's device.
-- **Firestore Dual-Sync**: It silently synchronizes to **Firebase Cloud Firestore** in the background using synchronized Document IDs (`setDoc`). This prevents duplicate reports across devices and ensures that even if a rural user loses internet while submitting, the report is saved and synced later.
-- **Live Dashboard**: The React dashboard merges Cloud Firestore snapshots with local IndexedDB data and cross-tab `BroadcastChannel` events to create a real-time, deduplicated Live Map.
+### 2. Real-Time Sync & Data Integrity
+- **Local-First Ledger**: The app uses `IndexedDB` for instant, zero-latency saving of high-resolution reports on the citizen's device.
+- **Strict Cloud-Only Sync**: To guarantee perfect mathematical alignment of report counts across all devices, the app utilizes a Strict Cloud-Only Sync mechanism via **Firebase Cloud Firestore**. It actively deduplicates reports across the nationwide network in real-time.
+- **Dynamic Region Clustering**: The React frontend executes a powerful `ClusterEngine` that dynamically aggregates individual citizen demand pins into prioritized Action Mandate Clusters based on the MP's selected viewing region (e.g., Koraput PC vs All India).
 
 
 

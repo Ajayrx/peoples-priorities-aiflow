@@ -179,18 +179,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const prompt = `You are an expert multilingual speech analysis AI for a citizen grievance platform serving rural communities in Odisha, India.
 
 The citizen spoke into their microphone. Their selected language is: ${selectedLanguage} (${languageLabel[selectedLanguage]}).
-${fallbackText && fallbackText.trim() !== '' ? `Browser speech recognition captured this preliminary snippet: "${fallbackText.trim()}" (Use this as a strong hint if the audio is unclear).` : ''}
+${fallbackText && fallbackText.trim() !== '' ? `CRITICAL CONTEXT: The browser's native live speech recognition captured this text on the device before the audio file was compressed: "${fallbackText.trim()}". Because network/microphone latency can cause the end of the audio file to be cut off or garbled, you MUST rely heavily on this text snippet to fill in any missing or unclear words!` : ''}
 
 Your tasks:
 1. Detect the actual language spoken (it may differ from the selected language).
-2. Transcribe EXACTLY what the citizen said, preserving their original language.
-3. Translate the meaning of the complaint into clear English.
+2. Transcribe what the citizen said, preserving their original language. If the audio cuts off at the end or has missing words due to mic quality, seamlessly merge the audio you hear with the CRITICAL CONTEXT text snippet provided above to form a complete and accurate transcription.
+3. Translate the full meaning of the complaint into clear English.
 4. Categorize the development issue into ONE of these categories only: ROAD, SCHOOLS, HEALTHCARE, WATER, DRAINAGE, ELECTRICITY, GARBAGE, STREET_LIGHTS, AGRICULTURE.
 5. Write a concise English summary (1-2 sentences).
 6. Extract 3-5 relevant keywords in English.
 7. Estimate your transcription confidence between 0.0 and 1.0.
 
-If there is NO speech (silence, static, wind, noise only), set "noSpeech" to true and all text fields to null.
+If there is absolutely NO speech and NO provided text snippet, set "noSpeech" to true and all text fields to null.
 
 Do NOT invent complaint content. Do NOT fill in information not spoken by the citizen.
 
