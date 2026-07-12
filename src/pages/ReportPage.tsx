@@ -17,7 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import type { Region, CategoryType } from '../types';
-import { evaluateLocalityPhoto, type GeminiVisionResult } from '../services/geminiVision';
+import { evaluateLocalityPhoto, type GeminiVisionResult, type ImageQualityFailureReason } from '../services/geminiVision';
 import { transcribeAndTranslateAudio } from '../services/geminiAudio';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -29,6 +29,42 @@ interface ReportPageProps {
   region: Region;
   onSelectRegion?: (region: Region) => void;
   onNavigate: (tab: string) => void;
+}
+
+// ── Stage 1: Deterministic Image Quality Check (Canvas Pre-validation) ────────
+function checkImageQuality(ctx: CanvasRenderingContext2D, w: number, h: number): ImageQualityFailureReason | null {
+  if (w < 200 || h < 200) return 'IMAGE_TOO_SMALL';
+
+  const imgData = ctx.getImageData(0, 0, w, h).data;
+  let rSum = 0, gSum = 0, bSum = 0;
+  let count = 0;
+  
+  // Sample every 4th pixel for speed
+  for (let i = 0; i < imgData.length; i += 16) {
+    rSum += imgData[i];
+    gSum += imgData[i+1];
+    bSum += imgData[i+2];
+    count++;
+  }
+  
+  const rMean = rSum / count;
+  const gMean = gSum / count;
+  const bMean = bSum / count;
+  const brightness = (rMean + gMean + bMean) / 3;
+
+  if (brightness > 240) return 'SEVERELY_OVEREXPOSED';
+  if (brightness < 15) return 'SEVERELY_UNDEREXPOSED';
+
+  let rVar = 0, gVar = 0, bVar = 0;
+  for (let i = 0; i < imgData.length; i += 16) {
+    rVar += Math.pow(imgData[i] - rMean, 2);
+    gVar += Math.pow(imgData[i+1] - gMean, 2);
+    bVar += Math.pow(imgData[i+2] - bMean, 2);
+  }
+  const variance = (rVar + gVar + bVar) / (3 * count);
+  if (variance < 20) return 'BLANK_IMAGE';
+
+  return null;
 }
 
 export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, onNavigate }) => {
@@ -354,9 +390,26 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
           else { w = Math.round((w * maxDim) / h); h = maxDim; } 
         }
         canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
+
+          // STAGE 1: Deterministic Check
+          const qualityError = checkImageQuality(ctx, w, h);
+          if (qualityError) {
+            setPhotoPreviewUrl('');
+            setIsEvaluatingPhoto(false);
+            setVisionResult({
+              imageEvidenceStatus: 'IMAGE_QUALITY_FAILED',
+              imageQualityFailureReason: qualityError,
+              confidenceScore: 0,
+              detectedIssue: 'Invalid photo',
+              shortSummary: 'The photo does not meet minimum quality requirements.',
+              isRealApiEval: false
+            });
+            return;
+          }
+
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.82);
           setPhotoPreviewUrl(compressedBase64);
 
