@@ -17,12 +17,18 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import Busboy from 'busboy';
 
 export const config = {
   api: {
     bodyParser: false,
   },
 };
+
+// ── In-Memory Rate Limiter (Per Vercel Instance Burst Protection) ─────────────
+const rateLimitMap = new Map<string, { count: number; expiresAt: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 5;
 
 // ── Canonical application categories ──────────────────────────────────────────
 const CANONICAL_CATEGORIES = [
@@ -135,15 +141,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 2. Firebase Auth token verification
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!token) {
-    return res.status(401).json({ error: 'Missing Authorization token' });
+  // 2. IP Rate Limiting (Burst Protection)
+  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const userRate = rateLimitMap.get(clientIp);
+
+  if (userRate && now < userRate.expiresAt) {
+    if (userRate.count >= MAX_REQUESTS_PER_WINDOW) {
+      return res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
+    }
+    userRate.count++;
+  } else {
+    rateLimitMap.set(clientIp, { count: 1, expiresAt: now + RATE_LIMIT_WINDOW });
   }
-  const tokenPayload = await verifyFirebaseToken(token);
-  if (!tokenPayload) {
-    return res.status(403).json({ error: 'Invalid or expired Firebase ID token' });
+
+  // Cleanup old entries (primitive garbage collection)
+  if (Math.random() < 0.05) {
+    for (const [key, value] of rateLimitMap.entries()) {
+      if (now > value.expiresAt) {
+        rateLimitMap.delete(key);
+      }
+    }
   }
 
   // 3. Gemini API key guard
@@ -176,30 +194,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!boundaryMatch) {
     return res.status(400).json({ error: 'Invalid multipart boundary' });
   }
-  const boundary = boundaryMatch[1];
+  const boundary = boundaryMatch[1].replace(/^"|"$/g, '');
 
-  // Simple multipart parser — extract fields and file
   let imageBase64 = '';
   let imageMimeType = '';
   let complaintCategory = '';
 
-  const parts = rawBody.toString('binary').split(`--${boundary}`);
-  for (const part of parts) {
-    if (part.includes('name="imageBlob"')) {
-      const mimeMatch = part.match(/Content-Type:\s*([^\r\n]+)/i);
-      imageMimeType = mimeMatch ? mimeMatch[1].trim() : '';
-      const dataStart = part.indexOf('\r\n\r\n');
-      if (dataStart !== -1) {
-        const binaryData = part.slice(dataStart + 4, part.lastIndexOf('\r\n'));
-        imageBase64 = Buffer.from(binaryData, 'binary').toString('base64');
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  let startIndex = 0;
+  while (true) {
+    const partStart = rawBody.indexOf(boundaryBuffer, startIndex);
+    if (partStart === -1) break;
+    
+    const nextBoundary = rawBody.indexOf(boundaryBuffer, partStart + boundaryBuffer.length);
+    const partEnd = nextBoundary !== -1 ? nextBoundary : rawBody.length;
+    
+    const partBuffer = rawBody.subarray(partStart + boundaryBuffer.length, partEnd);
+    
+    // Find the end of headers (\r\n\r\n)
+    const headerEnd = partBuffer.indexOf(Buffer.from('\r\n\r\n'));
+    if (headerEnd !== -1) {
+      const headerText = partBuffer.subarray(0, headerEnd).toString('utf-8');
+      if (headerText.includes('name="imageBlob"')) {
+        const mimeMatch = headerText.match(/Content-Type:\s*([^\r\n]+)/i);
+        imageMimeType = mimeMatch ? mimeMatch[1].trim() : '';
+        // Data starts after \r\n\r\n (4 bytes) and ends before the trailing \r\n (2 bytes) before the next boundary
+        const dataBuffer = partBuffer.subarray(headerEnd + 4, Math.max(headerEnd + 4, partBuffer.length - 2));
+        imageBase64 = dataBuffer.toString('base64');
+      }
+      if (headerText.includes('name="complaintCategory"')) {
+        const dataBuffer = partBuffer.subarray(headerEnd + 4, Math.max(headerEnd + 4, partBuffer.length - 2));
+        complaintCategory = dataBuffer.toString('utf-8').trim();
       }
     }
-    if (part.includes('name="complaintCategory"')) {
-      const dataStart = part.indexOf('\r\n\r\n');
-      if (dataStart !== -1) {
-        complaintCategory = part.slice(dataStart + 4).replace(/\r\n$/, '').trim();
-      }
-    }
+    
+    if (nextBoundary === -1) break;
+    startIndex = nextBoundary;
   }
 
   // 5. Validate MIME type

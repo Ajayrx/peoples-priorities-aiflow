@@ -13,9 +13,6 @@
  * Gemini does NOT calculate priority. ClusterEngine is the only priority engine.
  */
 
-import { getAuth } from 'firebase/auth';
-import { getApps, initializeApp } from 'firebase/app';
-import { getCloudConfig } from './cloudConfig';
 import type { CategoryType } from '../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,27 +49,7 @@ export interface GeminiVisionResult {
   error?: string;
 }
 
-// ── Firebase Auth helper ──────────────────────────────────────────────────────
 
-async function getFirebaseIdToken(): Promise<string | null> {
-  try {
-    const { firebaseConfig } = getCloudConfig();
-    const app = getApps().length === 0
-      ? initializeApp(firebaseConfig)
-      : getApps()[0];
-    const auth = getAuth(app);
-
-    // If no user, sign in anonymously so we always have a valid token
-    if (!auth.currentUser) {
-      const { signInAnonymously } = await import('firebase/auth');
-      await signInAnonymously(auth);
-    }
-    return await auth.currentUser!.getIdToken();
-  } catch (err) {
-    console.error('Failed to get Firebase ID token:', err);
-    return null;
-  }
-}
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -95,11 +72,7 @@ export async function evaluateLocalityPhoto(
     error: 'AI_ANALYSIS_FAILED',
   };
 
-  // 1. Get Firebase Auth token
-  const idToken = await getFirebaseIdToken();
-  if (!idToken) {
-    return { ...AI_FAILED, error: 'Authentication required for AI analysis' };
-  }
+
 
   // 2. Build multipart form data
   const formData = new FormData();
@@ -112,7 +85,6 @@ export async function evaluateLocalityPhoto(
     const response = await fetch('/api/analyze-report-image', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${idToken}`,
         // Do NOT set Content-Type — browser sets it automatically with boundary for FormData
       },
       body: formData,
