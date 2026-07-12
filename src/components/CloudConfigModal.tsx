@@ -45,7 +45,7 @@ export const CloudConfigModal: React.FC<CloudConfigModalProps> = ({ isOpen, onCl
             </div>
             <div>
               <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
-                <span>Real-Time Cloud & Gemini Vision Setup</span>
+                <span>Real-Time Cloud & Vertex AI Multimodal Setup</span>
                 <span className="text-[10px] font-mono bg-teal-950 text-teal-400 px-2 py-0.5 rounded border border-teal-800">
                   DUAL MODE
                 </span>

@@ -1,0 +1,275 @@
+/**
+ * Vercel Serverless API — /api/analyze-report-audio
+ *
+ * Secure bridge: Browser MediaRecorder Blob → this endpoint → Gemini Multimodal Audio.
+ *
+ * Security:
+ *  - POST only
+ *  - Firebase ID token verified server-side
+ *  - Audio Blob accepted as multipart/form-data — no URL-based audio
+ *  - MIME and size validation
+ *  - Gemini API key via process.env.GEMINI_API_KEY only
+ *
+ * Responsibility boundary:
+ *  - Gemini: transcription, language detection, translation, categorisation
+ *  - ClusterEngine (frontend): priority scoring — NEVER Gemini
+ *
+ * Supported citizen languages: Odia, Hindi, Telugu, English
+ */
+
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+// ── Canonical application categories ──────────────────────────────────────────
+const CANONICAL_CATEGORIES = [
+  'ROAD', 'SCHOOLS', 'HEALTHCARE', 'WATER',
+  'DRAINAGE', 'ELECTRICITY', 'GARBAGE', 'STREET_LIGHTS', 'AGRICULTURE',
+] as const;
+type CanonicalCategory = typeof CANONICAL_CATEGORIES[number];
+
+// Allowed audio MIME types from MediaRecorder
+const ALLOWED_AUDIO_MIMES = [
+  'audio/webm', 'audio/webm;codecs=opus',
+  'audio/mp4', 'audio/ogg', 'audio/ogg;codecs=opus',
+  'audio/wav', 'audio/mpeg', 'audio/flac',
+];
+
+function normaliseCategory(raw: string): CanonicalCategory | null {
+  const upper = (raw || '').toUpperCase().replace(/[^A-Z_]/g, '');
+  if (CANONICAL_CATEGORIES.includes(upper as CanonicalCategory)) {
+    return upper as CanonicalCategory;
+  }
+  return null;
+}
+
+function getCleanMimeType(raw: string): string {
+  const base = (raw || '').split(';')[0].trim().toLowerCase();
+  const supported = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/flac'];
+  return supported.includes(base) ? base : 'audio/webm';
+}
+
+// ── Firebase ID token verification ────────────────────────────────────────────
+async function verifyFirebaseToken(token: string): Promise<{ uid: string } | null> {
+  const apiKey = process.env.FIREBASE_WEB_API_KEY;
+  if (!apiKey) { console.error('FIREBASE_WEB_API_KEY not set'); return null; }
+  try {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: token }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const uid = data?.users?.[0]?.localId;
+    return uid ? { uid } : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // 1. Method guard
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // 2. Firebase Auth token verification
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!token) return res.status(401).json({ error: 'Missing Authorization token' });
+  const tokenPayload = await verifyFirebaseToken(token);
+  if (!tokenPayload) return res.status(403).json({ error: 'Invalid or expired Firebase ID token' });
+
+  // 3. Gemini API key guard
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  if (!geminiApiKey) return res.status(500).json({ error: 'AI service not configured' });
+
+  // 4. Parse multipart form data
+  const contentType = req.headers['content-type'] || '';
+  if (!contentType.includes('multipart/form-data')) {
+    return res.status(415).json({ error: 'Expected multipart/form-data' });
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req as any) {
+    chunks.push(chunk);
+    const total = chunks.reduce((a, b) => a + b.length, 0);
+    if (total > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Audio too large. Maximum 10 MB.' });
+    }
+  }
+  const rawBody = Buffer.concat(chunks);
+
+  const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
+  if (!boundaryMatch) return res.status(400).json({ error: 'Invalid multipart boundary' });
+  const boundary = boundaryMatch[1];
+
+  let audioBase64 = '';
+  let audioMimeType = '';
+  let selectedLanguage = 'ENGLISH';
+
+  const parts = rawBody.toString('binary').split(`--${boundary}`);
+  for (const part of parts) {
+    if (part.includes('name="audioBlob"')) {
+      const mimeMatch = part.match(/Content-Type:\s*([^\r\n]+)/i);
+      audioMimeType = mimeMatch ? mimeMatch[1].trim() : 'audio/webm';
+      const dataStart = part.indexOf('\r\n\r\n');
+      if (dataStart !== -1) {
+        const binaryData = part.slice(dataStart + 4, part.lastIndexOf('\r\n'));
+        audioBase64 = Buffer.from(binaryData, 'binary').toString('base64');
+      }
+    }
+    if (part.includes('name="selectedLanguage"')) {
+      const dataStart = part.indexOf('\r\n\r\n');
+      if (dataStart !== -1) {
+        selectedLanguage = part.slice(dataStart + 4).replace(/\r\n$/, '').trim().toUpperCase();
+      }
+    }
+  }
+
+  // 5. Validate audio MIME (accept with or without codec params)
+  const baseMime = (audioMimeType || '').split(';')[0].trim().toLowerCase();
+  const allowedBases = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/mpeg', 'audio/flac'];
+  if (!allowedBases.includes(baseMime)) {
+    return res.status(415).json({ error: `Unsupported audio type: ${audioMimeType}` });
+  }
+
+  if (!audioBase64 || audioBase64.length < 50) {
+    return res.status(400).json({ error: 'No valid audio data received' });
+  }
+
+  const cleanMime = getCleanMimeType(audioMimeType);
+
+  // 6. Validate selectedLanguage
+  const validLanguages = ['ODIA', 'HINDI', 'TELUGU', 'ENGLISH'];
+  if (!validLanguages.includes(selectedLanguage)) selectedLanguage = 'ENGLISH';
+
+  const languageLabel: Record<string, string> = {
+    ODIA: 'Odia (ଓଡ଼ିଆ)',
+    HINDI: 'Hindi (हिन्दी)',
+    TELUGU: 'Telugu (తెలుగు)',
+    ENGLISH: 'English',
+  };
+
+  // 7. Build Gemini audio prompt
+  const prompt = `You are an expert multilingual speech analysis AI for a citizen grievance platform serving rural communities in Odisha, India.
+
+The citizen spoke into their microphone. Their selected language is: ${selectedLanguage} (${languageLabel[selectedLanguage]}).
+
+Your tasks:
+1. Detect the actual language spoken (it may differ from the selected language).
+2. Transcribe EXACTLY what the citizen said, preserving their original language.
+3. Translate the meaning of the complaint into clear English.
+4. Categorize the development issue into ONE of these categories only: ROAD, SCHOOLS, HEALTHCARE, WATER, DRAINAGE, ELECTRICITY, GARBAGE, STREET_LIGHTS, AGRICULTURE.
+5. Write a concise English summary (1-2 sentences).
+6. Extract 3-5 relevant keywords in English.
+7. Estimate your transcription confidence between 0.0 and 1.0.
+
+If there is NO speech (silence, static, wind, noise only), set "noSpeech" to true and all text fields to null.
+
+Do NOT invent complaint content. Do NOT fill in information not spoken by the citizen.
+
+Respond ONLY with this exact JSON:
+{
+  "noSpeech": boolean,
+  "originalLanguage": "ODIA | HINDI | TELUGU | ENGLISH | OTHER",
+  "originalTranscript": "exact words spoken in original language, or null",
+  "englishTranscript": "meaning translated to English, or null",
+  "category": "one of the canonical categories above, or null",
+  "summary": "1-2 sentence English summary, or null",
+  "keywords": ["array of English keywords"],
+  "confidence": number between 0.0 and 1.0
+}`;
+
+  // 8. Call Gemini Multimodal Audio
+  const geminiModel = process.env.GEMINI_AUDIO_MODEL || 'gemini-2.5-flash';
+
+  let geminiData: any;
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: cleanMime, data: audioBase64 } },
+            ],
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    );
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text().catch(() => '');
+      console.error(`Gemini audio error ${geminiRes.status}:`, errText);
+      return res.status(200).json({ status: 'AI_ANALYSIS_FAILED', error: 'Gemini audio analysis failed' });
+    }
+
+    const geminiJson = await geminiRes.json();
+    let rawText = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    rawText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    geminiData = JSON.parse(rawText);
+  } catch (err) {
+    console.error('Gemini audio call or parse error:', err);
+    return res.status(200).json({ status: 'AI_ANALYSIS_FAILED', error: 'AI audio analysis temporarily unavailable' });
+  }
+
+  // 9. Handle no-speech case
+  if (geminiData.noSpeech === true) {
+    return res.status(200).json({
+      status: 'NO_SPEECH_DETECTED',
+      originalLanguage: null,
+      originalTranscript: null,
+      englishTranscript: null,
+      category: null,
+      summary: null,
+      keywords: [],
+      confidence: 0,
+    });
+  }
+
+  // 10. Validate and normalise output
+  const originalLanguage = typeof geminiData.originalLanguage === 'string'
+    ? geminiData.originalLanguage.toUpperCase()
+    : selectedLanguage;
+  const originalTranscript = typeof geminiData.originalTranscript === 'string'
+    ? geminiData.originalTranscript.trim()
+    : null;
+  const englishTranscript = typeof geminiData.englishTranscript === 'string'
+    ? geminiData.englishTranscript.trim()
+    : null;
+  const category = normaliseCategory(geminiData.category || '');
+  const summary = typeof geminiData.summary === 'string' ? geminiData.summary.trim() : null;
+  const keywords: string[] = Array.isArray(geminiData.keywords)
+    ? geminiData.keywords.filter((k: any) => typeof k === 'string').slice(0, 8)
+    : [];
+  const confidence = typeof geminiData.confidence === 'number'
+    ? Math.min(1, Math.max(0, geminiData.confidence))
+    : 0;
+
+  // Require at minimum a transcript or a summary
+  if (!originalTranscript && !englishTranscript) {
+    return res.status(200).json({ status: 'AI_ANALYSIS_FAILED', error: 'No transcript returned from Gemini' });
+  }
+
+  return res.status(200).json({
+    status: 'COMPLETED',
+    originalLanguage,
+    originalTranscript,
+    englishTranscript,
+    category,
+    summary,
+    keywords,
+    confidence,
+  });
+}

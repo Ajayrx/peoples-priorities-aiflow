@@ -62,6 +62,7 @@ export interface CitizenReport {
   intakeType?: 'VOICE' | 'PHOTO' | 'TEXT';
   rawMediaUrl?: string;
   photoBase64?: string;
+  imageStoragePath?: string;
   rawText?: string;
   detectedIssue?: string;
   urgencyReasoning?: string;

@@ -4,7 +4,7 @@ import {
   getFirestore,
   collection,
   doc,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -189,8 +189,6 @@ class CitizenReportServiceSingleton {
       },
       inputMethod: intakeMethod,
       intakeType: intakeMethod,
-      rawMediaUrl: photoUrl,
-      photoBase64: photoUrl,
       rawText: description,
       detectedIssue: title,
       urgencyReasoning: description,
@@ -222,6 +220,8 @@ class CitizenReportServiceSingleton {
       detectedIssue: r.detectedIssue || r.title || 'Verified Infrastructure Defect & Transit Gap',
       urgencyReasoning: r.urgencyReasoning || r.description || 'Verified citizen civic intake requiring immediate evaluation.',
       photoBase64: r.photoBase64 || r.rawMediaUrl || (r.images?.[0]),
+      imageStoragePath: r.imageStoragePath,
+      voiceUrl: r.voiceUrl,
       intakeType: r.intakeType || r.inputMethod || 'TEXT',
       timestamp: (r.timestamp && !r.timestamp.toLowerCase().includes('just now')) ? r.timestamp : new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' • ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase(),
       location: {
@@ -327,7 +327,7 @@ class CitizenReportServiceSingleton {
   /**
    * Submits a new citizen report to IndexedDB, Cloud Firestore, and broadcasts across all tabs/pages.
    */
-  public async submitCitizenReport(payload: Partial<CitizenReport> & { photoBase64?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }): Promise<CitizenReport> {
+  public async submitCitizenReport(payload: Partial<CitizenReport> & { photoBase64?: string; imageStoragePath?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }): Promise<CitizenReport> {
     const db = getSafeFirestoreInstance();
     let newReportId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
 
@@ -354,39 +354,14 @@ class CitizenReportServiceSingleton {
     // Cloud Firestore write (Single Source of Truth)
     if (db) {
       try {
-        const compressedPhoto = await compressPhotoForCloudSync(newReport.photoBase64);
-        const rawPayload = {
+        const docRef = doc(collection(db, 'citizen_reports'));
+        const compressedPhoto = newReport.photoBase64 ? await compressPhotoForCloudSync(newReport.photoBase64) : undefined;
+        await setDoc(docRef, {
           ...newReport,
           photoBase64: compressedPhoto,
-          images: [],
+          imageStoragePath: newReport.imageStoragePath,
           createdAt: serverTimestamp(),
-        };
-        delete (rawPayload as any).id;
-
-        // Helper function to remove undefined fields recursively so Firestore doesn't throw invalid data error
-        const cleanPayload = (obj: any): any => {
-          if (obj === null || obj === undefined) return null;
-          if (obj && typeof obj === 'object' && ('.sv' in obj || '_methodName' in obj || obj.constructor?.name === 'FieldValue')) {
-            return obj;
-          }
-          if (Array.isArray(obj)) {
-            return obj.map(cleanPayload);
-          }
-          if (typeof obj === 'object') {
-            const cleaned: any = {};
-            for (const key of Object.keys(obj)) {
-              const val = obj[key];
-              if (val !== undefined) {
-                cleaned[key] = cleanPayload(val);
-              }
-            }
-            return cleaned;
-          }
-          return obj;
-        };
-
-        const cloudPayload = cleanPayload(rawPayload);
-        const docRef = await addDoc(collection(db, 'citizen_reports'), cloudPayload);
+        });
         console.log('✅ Successfully published verified citizen complaint to Firestore! Document ID:', docRef.id);
 
         const finalReport = this.normalizeReport({
@@ -410,6 +385,8 @@ class CitizenReportServiceSingleton {
       const safeForLocal = {
         ...newReport,
         photoBase64: newReport.photoBase64 && newReport.photoBase64.length > 100000 ? undefined : newReport.photoBase64,
+        imageStoragePath: newReport.imageStoragePath,
+        intakeType: newReport.intakeType,
         images: [],
       };
       const updated = [safeForLocal, ...existing].slice(0, 50);
@@ -627,15 +604,13 @@ class CitizenReportServiceSingleton {
             for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
               if (key.startsWith('live-') || (rep.clientSubmissionId && !cloudSubmissionIds.has(rep.clientSubmissionId) && !key.startsWith('rep-') && key !== 'mock')) {
                 try {
-                  const compressedPhoto = await compressPhotoForCloudSync(rep.photoBase64);
-                  const cloudPayload = {
+                  const compressedPhoto = rep.photoBase64 ? await compressPhotoForCloudSync(rep.photoBase64) : undefined;
+                  await setDoc(doc(db, 'citizen_reports', rep.id), {
                     ...rep,
                     photoBase64: compressedPhoto,
-                    images: [],
+                    imageStoragePath: rep.imageStoragePath,
                     createdAt: serverTimestamp(),
-                  };
-                  delete (cloudPayload as any).id;
-                  addDoc(collection(db, 'citizen_reports'), cloudPayload).catch(() => {});
+                  });
                 } catch (err) {
                   // ignore
                 }

@@ -8,7 +8,7 @@ interface CitizenStoreState {
   rankedPriorityList: CitizenReport[];
   stats: DashboardStats;
   isLoading: boolean;
-  submitReport: (payload: Partial<CitizenReport> & { photoBase64?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }) => Promise<CitizenReport>;
+  submitReport: (payload: Partial<CitizenReport> & { photoBase64?: string; imageStoragePath?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }) => Promise<CitizenReport>;
   updateReport: (id: string, updates: Partial<CitizenReport>) => Promise<void>;
   deleteReport: (id: string) => Promise<void>;
   setBaseHotspots: (baseList: Hotspot[]) => void;
@@ -41,7 +41,7 @@ export const CitizenStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => unsubscribe();
   }, []);
 
-  const submitReport = useCallback(async (payload: Partial<CitizenReport> & { photoBase64?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }) => {
+  const submitReport = useCallback(async (payload: Partial<CitizenReport> & { photoBase64?: string; imageStoragePath?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }) => {
     return await CitizenReportService.submitCitizenReport(payload);
   }, []);
 

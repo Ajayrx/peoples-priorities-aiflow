@@ -27,6 +27,7 @@ import {
 import type { Hotspot, Region } from '../types';
 import { useCitizenStore } from '../context/CitizenStoreContext';
 import { runClusterEngine } from '../services/ClusterEngine';
+import { StorageImage } from '../components/StorageImage';
 import { getReportTimestampMs } from '../services/CitizenReportService';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -732,10 +733,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                                 "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
                               </div>
 
-                              {(rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                              {(rep.imageStoragePath || rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
                                 <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 shadow-2xs">
-                                  <img
-                                    src={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                                  <StorageImage
+                                    imageStoragePath={rep.imageStoragePath}
+                                    fallbackSrc={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
                                     alt="Citizen upload"
                                     className="w-full h-auto object-cover"
                                   />
@@ -964,10 +966,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                           "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
                         </div>
 
-                        {(rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                        {(rep.imageStoragePath || rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
                           <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 mt-1">
-                            <img
-                              src={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                            <StorageImage
+                              imageStoragePath={rep.imageStoragePath}
+                              fallbackSrc={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
                               alt="Citizen evidence"
                               className="w-full h-auto object-cover"
                             />
@@ -1253,9 +1256,14 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                             </div>
 
                             {/* If Photo Report, display the actual image thumbnail and analysis */}
-                            {isPhoto && rep.rawMediaUrl && (
+                            {isPhoto && (rep.imageStoragePath || rep.rawMediaUrl) && (
                               <div className="flex flex-col sm:flex-row items-start gap-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200">
-                                <img src={rep.rawMediaUrl} alt="Verified Citizen Photo" className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg border-2 border-emerald-400 shadow-md shrink-0" />
+                                <StorageImage 
+                                  imageStoragePath={rep.imageStoragePath}
+                                  fallbackSrc={rep.rawMediaUrl || rep.photoBase64} 
+                                  alt="Verified Citizen Photo" 
+                                  className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg border-2 border-emerald-400 shadow-md shrink-0" 
+                                />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-[10px] font-mono font-bold text-emerald-800 uppercase">Automated AI Defect Inspection</div>
                                   <p className="text-xs text-slate-800 font-medium mt-1 leading-relaxed">
@@ -1356,7 +1364,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                       {[
                         { title: 'Layer 1: Spatial Overlap Verification (< 500m radius)', status: 'PASSED - UNIQUE', desc: 'No identical MP LAD or PMGSY road tenders exist within 500 meters in the past 5 fiscal years.' },
                         { title: 'Layer 2: EXIF & GPS Timestamp Integrity Check', status: 'PASSED - GENUINE', desc: 'All 48 photo and voice uploads contain valid, unedited smartphone geocodes and device hashes.' },
-                        { title: 'Layer 3: AI Visual Photo Similarity Audit', status: 'PASSED - 0% MATCH', desc: 'Gemini Vision verified that uploaded culvert damage photos are distinct from previous closed works.' },
+                        { title: 'Layer 3: AI Visual Photo Similarity Audit', status: 'PASSED - 0% MATCH', desc: 'Gemini Multimodal on Vertex AI verified that uploaded culvert damage photos are distinct from previous closed works.' },
                         { title: 'Layer 4: District Priority Queue Sync', status: 'PASSED - MANDATE READY', desc: 'Cluster is verified unique and ranks in the Top 3 Citizen Demands across Koraput PC ready for immediate fast-track mandate.' },
                       ].map((layer, idx) => (
                         <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">

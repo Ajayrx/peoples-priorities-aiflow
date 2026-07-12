@@ -1,4 +1,15 @@
-// Secure LocalStorage & Environment Variable Config Manager for Gemini & Firebase
+/**
+ * Firebase Web SDK Configuration Manager
+ *
+ * SECURITY MODEL:
+ *  - VITE_FIREBASE_* variables: Firebase Web SDK config (public by design — they are client identifiers, not secrets)
+ *  - geminiApiKey: no longer used for direct AI calls. The Gemini API key lives
+ *    exclusively in Vercel server-side env as GEMINI_API_KEY.
+ *    All AI calls route through /api/analyze-report-image, /api/analyze-report-audio,
+ *    /api/analyze-report-text.
+ *  - The CloudConfigModal may still allow users to enter a key for the localStorage
+ *    field (legacy support), but it is NOT forwarded to any AI request.
+ */
 
 export interface FirebaseConfig {
   apiKey?: string;
@@ -7,53 +18,49 @@ export interface FirebaseConfig {
   storageBucket?: string;
   messagingSenderId?: string;
   appId?: string;
+  measurementId?: string;
   databaseURL?: string;
 }
 
 export interface CloudConfigState {
+  /** @deprecated No longer used for AI calls. Gemini API key is server-side only. */
   geminiApiKey: string;
   firebaseConfig: FirebaseConfig;
   useLiveFirebase: boolean;
 }
 
-const CONFIG_STORAGE_KEY = 'peoples_priorities_cloud_config_v1';
+const CONFIG_STORAGE_KEY = 'peoples_priorities_cloud_config_v2';
+
+const DEFAULT_FIREBASE: FirebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyC2Qufkje5ySeQut5ht7RKBDZTbfZvNrw0',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'peoples-priorities-cloud.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'peoples-priorities-cloud',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'peoples-priorities-cloud.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '470632059939',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:470632059939:web:8a5490234d70e072bc0d96',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-17612VHQS4',
+};
 
 export function getCloudConfig(): CloudConfigState {
-  // 1. Check Vercel / Vite environment variables first, otherwise use local storage or offline AI engine
-  const defaultGeminiKey = '';
-  const defaultFirebase = {
-    apiKey: 'AIzaSyC2Qufkje5ySeQut5ht7RKBDZTbfZvNrw0',
-    authDomain: 'peoples-priorities-cloud.firebaseapp.com',
-    projectId: 'peoples-priorities-cloud',
-    storageBucket: 'peoples-priorities-cloud.firebasestorage.app',
-    messagingSenderId: '470632059939',
-    appId: '1:470632059939:web:8a5490234d70e072bc0d96',
-    databaseURL: 'https://peoples-priorities-cloud-default-rtdb.firebaseio.com',
-  };
-
-  const envGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || defaultGeminiKey;
-
-  // 2. Check localStorage for user overrides in the live web UI
   let savedConfig: Partial<CloudConfigState> = {};
   try {
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (raw) {
-      savedConfig = JSON.parse(raw);
-    }
+    if (raw) savedConfig = JSON.parse(raw);
   } catch (e) {
     console.warn('Failed to parse cloud config from storage', e);
   }
 
-  const geminiApiKey = (savedConfig.geminiApiKey && savedConfig.geminiApiKey.trim() !== '' ? savedConfig.geminiApiKey.trim() : envGeminiKey) || '';
-  const projectId = savedConfig.firebaseConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || defaultFirebase.projectId;
+  const projectId = savedConfig.firebaseConfig?.projectId || DEFAULT_FIREBASE.projectId || '';
   const firebaseConfig: FirebaseConfig = {
-    apiKey: savedConfig.firebaseConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || defaultFirebase.apiKey,
-    authDomain: savedConfig.firebaseConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || defaultFirebase.authDomain,
-    projectId: projectId,
-    storageBucket: savedConfig.firebaseConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || defaultFirebase.storageBucket,
-    messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || defaultFirebase.messagingSenderId,
-    appId: savedConfig.firebaseConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || defaultFirebase.appId,
-    databaseURL: savedConfig.firebaseConfig?.databaseURL || import.meta.env.VITE_FIREBASE_DATABASE_URL || (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : defaultFirebase.databaseURL),
+    apiKey: savedConfig.firebaseConfig?.apiKey || DEFAULT_FIREBASE.apiKey,
+    authDomain: savedConfig.firebaseConfig?.authDomain || DEFAULT_FIREBASE.authDomain,
+    projectId,
+    storageBucket: savedConfig.firebaseConfig?.storageBucket || DEFAULT_FIREBASE.storageBucket,
+    messagingSenderId: savedConfig.firebaseConfig?.messagingSenderId || DEFAULT_FIREBASE.messagingSenderId,
+    appId: savedConfig.firebaseConfig?.appId || DEFAULT_FIREBASE.appId,
+    measurementId: savedConfig.firebaseConfig?.measurementId || DEFAULT_FIREBASE.measurementId,
+    databaseURL: savedConfig.firebaseConfig?.databaseURL ||
+      (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined),
   };
 
   const useLiveFirebase = Boolean(
@@ -63,7 +70,8 @@ export function getCloudConfig(): CloudConfigState {
   );
 
   return {
-    geminiApiKey,
+    // geminiApiKey kept for legacy CloudConfigModal UI field only — not used for AI
+    geminiApiKey: savedConfig.geminiApiKey?.trim() || '',
     firebaseConfig,
     useLiveFirebase,
   };
@@ -78,9 +86,15 @@ export function saveCloudConfig(config: CloudConfigState): void {
   }
 }
 
+/**
+ * Always returns true — Gemini API key is server-side only (GEMINI_API_KEY in Vercel).
+ * AI readiness is determined by whether the /api endpoints respond, not a client-side key check.
+ * @deprecated Use server-side AI endpoints instead of checking this.
+ */
 export function hasValidGeminiKey(): boolean {
-  const config = getCloudConfig();
-  return Boolean(config.geminiApiKey && config.geminiApiKey.trim().length > 10);
+  // The key is server-side. We optimistically report ready.
+  // Actual availability is determined by the /api endpoint responses.
+  return true;
 }
 
 export function hasValidFirebaseConfig(): boolean {
