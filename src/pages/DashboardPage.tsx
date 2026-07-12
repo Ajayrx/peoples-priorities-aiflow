@@ -37,16 +37,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
   // Consume canonical single source of truth
   const { hotspots, reports } = useCitizenStore();
 
-  const { clusters: engineClusters, individualReports: engineIndividualReports, emergingClusters } = useMemo(() => {
-    return runClusterEngine(reports, hotspots);
-  }, [reports, hotspots]);
-
-  // Recalculate priority scores dynamically based on slider weights across nationwide clusters
-  const dynamicHotspots = useMemo(() => {
+  // 1. Filter reports and hotspots by region FIRST so all downstream engine/metrics are perfectly aligned
+  const { allCanonicalReports, allCanonicalHotspots } = useMemo(() => {
     const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
     const distName = region.district.replace(' District', '').trim().toLowerCase();
     const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
 
+    const filteredReports = reports.filter((rep) => {
+      return isAll
+        ? true
+        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
+          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+    });
+
+    const filteredHotspots = hotspots.filter((hs) => {
+      return isAll
+        ? true
+        : hs.name.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(constName) ||
+          hs.location.blockOrTown.toLowerCase().includes(distName) ||
+          ((hs.location as any).district && (hs.location as any).district.toLowerCase().includes(distName)) ||
+          ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
+          (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
+    });
+
+    return { allCanonicalReports: filteredReports, allCanonicalHotspots: filteredHotspots };
+  }, [reports, hotspots, region]);
+
+  // 2. Run Cluster Engine solely on the active region's data
+  const { clusters: engineClusters, individualReports: engineIndividualReports, emergingClusters } = useMemo(() => {
+    return runClusterEngine(allCanonicalReports, allCanonicalHotspots);
+  }, [allCanonicalReports, allCanonicalHotspots]);
+
+  // 3. Recalculate priority scores dynamically based on slider weights and category filter
+  const dynamicHotspots = useMemo(() => {
     return engineClusters.map((hs) => {
       // Base score adjusted by our user slider multipliers vs defaults
       const baseD = hs.priorityBreakdown?.demandVelocityMultiplier || 1.2;
@@ -67,37 +94,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
         dynamicScore,
       };
     }).filter((hs) => {
-      const matchesRegion = isAll
-        ? true
-        : hs.name.toLowerCase().includes(constName) ||
-          hs.location.blockOrTown.toLowerCase().includes(constName) ||
-          hs.location.blockOrTown.toLowerCase().includes(distName) ||
-          ((hs.location as any).district && (hs.location as any).district.toLowerCase().includes(distName)) ||
-          ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
-          (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
-
-      if (!matchesRegion) return false;
       if (categoryFilter === 'ALL') return true;
       return hs.category === categoryFilter;
     }).sort((a, b) => b.dynamicScore - a.dynamicScore);
-  }, [demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter, engineClusters, region]);
-
-  // All verified citizen submissions across the entire system (canonical unified store) filtered by region
-  const allCanonicalReports = useMemo(() => {
-    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
-    const distName = region.district.replace(' District', '').trim().toLowerCase();
-    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
-
-    return reports.filter((rep) => {
-      return isAll
-        ? true
-        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
-          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
-          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
-    });
-  }, [reports, region]);
+  }, [demandWeight, demographicWeight, infraWeight, urgencyWeight, categoryFilter, engineClusters]);
 
   const displayedPriorityReports = useMemo(() => {
     const filtered = categoryFilter === 'ALL'
@@ -449,7 +449,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                     <TrendingUp className="w-4 h-4 text-teal-400 shrink-0" />
                   </div>
                   <div className="text-base sm:text-lg font-mono font-black text-white my-0.5 truncate min-w-0">
-                    {reports.length} <span className="text-xs text-teal-400 font-normal">Reports</span>
+                    {allCanonicalReports.length} <span className="text-xs text-teal-400 font-normal">Reports</span>
                   </div>
                   <span className="text-[10px] font-mono text-slate-400 truncate min-w-0 block">
                     {engineIndividualReports.length} Individual Demand Pins

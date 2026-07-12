@@ -161,19 +161,24 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   // Consume canonical single source of truth
   const { hotspots, reports } = useCitizenStore();
 
-  const { clusters: engineClusters, individualReports: _engineIndividualReports } = useMemo(() => {
-    return runClusterEngine(reports, hotspots);
-  }, [reports, hotspots]);
-
-  // Filter and sort hotspots (from canonical store / cluster engine)
-  // Filter and sort hotspots (from canonical store / cluster engine)
-  const filteredHotspots = useMemo(() => {
+  // 1. Filter reports and hotspots by region FIRST so the engine builds strictly region-scoped clusters
+  const { allCanonicalReports, allCanonicalHotspots } = useMemo(() => {
     const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
     const distName = region.district.replace(' District', '').trim().toLowerCase();
     const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
 
-    return engineClusters.filter((hs) => {
-      const matchesRegion = isAll
+    const filteredReports = reports.filter((rep) => {
+      return isAll
+        ? true
+        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
+          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+    });
+
+    const filteredHotspots = hotspots.filter((hs) => {
+      return isAll
         ? true
         : hs.name.toLowerCase().includes(constName) ||
           hs.location.blockOrTown.toLowerCase().includes(constName) ||
@@ -181,37 +186,37 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
           ((hs.location as any).district && (hs.location as any).district.toLowerCase().includes(distName)) ||
           ((hs.location as any).constituency && (hs.location as any).constituency.toLowerCase().includes(constName)) ||
           (region.constituency.includes('Koraput') && hs.name.toLowerCase().includes('semiliguda'));
+    });
 
+    return { allCanonicalReports: filteredReports, allCanonicalHotspots: filteredHotspots };
+  }, [reports, hotspots, region]);
+
+  // 2. Run Cluster Engine solely on the active region's data
+  const { clusters: engineClusters, individualReports: _engineIndividualReports } = useMemo(() => {
+    return runClusterEngine(allCanonicalReports, allCanonicalHotspots);
+  }, [allCanonicalReports, allCanonicalHotspots]);
+
+  // 3. Filter and sort hotspots (from region-scoped engine) by category/search
+  const filteredHotspots = useMemo(() => {
+    return engineClusters.filter((hs) => {
       const matchesCategory = selectedCategory === 'ALL' || hs.category === selectedCategory;
       const matchesSearch =
         hs.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         hs.location.blockOrTown.toLowerCase().includes(searchQuery.toLowerCase()) ||
         hs.category.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesRegion && matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch;
     }).sort((a, b) => b.priorityScore - a.priorityScore);
-  }, [selectedCategory, searchQuery, engineClusters, region]);
+  }, [selectedCategory, searchQuery, engineClusters]);
 
-  // Filter and sort individual verified citizen reports (from canonical store)
+  // 4. Filter and sort individual verified citizen reports (from canonical store) by category/search
   const filteredReports = useMemo(() => {
-    const constName = region.constituency.replace(' (Demo Region)', '').replace(' PC', '').trim().toLowerCase();
-    const distName = region.district.replace(' District', '').trim().toLowerCase();
-    const isAll = region.isAllIndia || region.state === 'All India' || region.constituency === 'All India' || region.constituency === 'All India View' || region.constituency.includes('All India');
-
-    const filtered = reports.filter((rep) => {
-      const matchesRegion = isAll
-        ? true
-        : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
-          (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
-          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
-
+    const filtered = allCanonicalReports.filter((rep) => {
       const matchesCategory = selectedCategory === 'ALL' || rep.category === selectedCategory;
       const matchesSearch =
         (rep.title || rep.detectedIssue || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (rep.description || rep.rawText || rep.aiSummary || '').toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesRegion && matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch;
     });
 
     return [...filtered].sort((a, b) => {
@@ -220,7 +225,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
       if (timeB !== timeA) return timeB - timeA;
       return (b.priorityScore || b.aiConfidence || 90) - (a.priorityScore || a.aiConfidence || 90);
     });
-  }, [reports, selectedCategory, searchQuery, region]);
+  }, [allCanonicalReports, selectedCategory, searchQuery]);
 
   // Automatically switch tab in Spatial Demand Ledger if the viewed area has complaints but no clusters (or vice versa)
   useEffect(() => {
