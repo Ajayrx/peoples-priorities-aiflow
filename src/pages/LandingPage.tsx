@@ -20,9 +20,27 @@ interface LandingPageProps {
   onResetToDemoRegion: () => void;
 }
 
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, onResetToDemoRegion: _onResetToDemoRegion }) => {
+  const [isQuotaHidden, setIsQuotaHidden] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hideQuotaError') === 'true';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setIsQuotaHidden(localStorage.getItem('hideQuotaError') === 'true');
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('quotaErrorStateChanged', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('quotaErrorStateChanged', handleStorageChange);
+    };
+  }, []);
   const { t } = useLanguage();
   const { hotspots: storeHotspots, reports } = useCitizenStore();
 
@@ -199,6 +217,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
                 {t('landing.cta.report')}
               </button>
             </div>
+
+            {!isQuotaHidden && (
+              <div className="mt-4 flex">
+                <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors font-bold text-sm w-full sm:w-auto shadow-sm">
+                  <Activity className="w-4 h-4" />
+                  Firebase base daily quota limit reached
+                </button>
+              </div>
+            )}
 
           </div>
 

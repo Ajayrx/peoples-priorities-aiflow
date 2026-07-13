@@ -307,6 +307,32 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               </button>
             </div>
 
+            {/* Admin Override: Quota Limit UI */}
+            <div className="bg-white rounded-[28px] border border-slate-200/90 shadow-xl p-5 sm:p-6 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-red-600" />
+                  <span>System Override: Quota UI</span>
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  const pass = prompt('Enter admin password to hide quota error:');
+                  if (pass === 'iloveu') {
+                    localStorage.setItem('hideQuotaError', 'true');
+                    window.dispatchEvent(new Event('storage'));
+                    window.dispatchEvent(new Event('quotaErrorStateChanged'));
+                    alert('Quota error UI hidden successfully.');
+                  } else if (pass !== null) {
+                    alert('Incorrect password.');
+                  }
+                }}
+                className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors border border-slate-300"
+              >
+                Hide Firebase Quota Limit Error
+              </button>
+            </div>
+
             {/* Version Timeline & Rollback Snapshots */}
             <div className="bg-white rounded-[28px] border border-slate-200/90 shadow-xl p-5 sm:p-6 space-y-4">
               <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
