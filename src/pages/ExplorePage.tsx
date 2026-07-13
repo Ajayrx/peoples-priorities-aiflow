@@ -18,6 +18,7 @@ import {
   Activity,
   Sparkles,
   ChevronRight,
+  RefreshCw,
   X,
   Eye,
   Building2,

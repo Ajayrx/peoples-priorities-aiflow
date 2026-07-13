@@ -9,8 +9,6 @@ import {
   deleteDoc,
   onSnapshot,
   query,
-  orderBy,
-  limit,
   serverTimestamp
 } from 'firebase/firestore';
 import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
