@@ -13,23 +13,9 @@ import {
 } from 'firebase/firestore';
 import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
 import type { CitizenReport, CitizenReportSubmission, Hotspot, DashboardStats } from '../types';
-import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 import { runClusterEngine, getReportTimestampMs } from './ClusterEngine';
-
 import { normalizeReportSubmission, validateCanonicalReportWrite, normalizeCitizenReportDocument } from '../utils/reportNormalizer';
-
-const STORAGE_KEY_REPORTS = 'peoples_priorities_live_reports_v1';
-const BUS_CHANNEL_NAME = 'peoples_priorities_realtime_sync';
-
-let broadcastChannel: BroadcastChannel | null = null;
-if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-  try {
-    broadcastChannel = new BroadcastChannel(BUS_CHANNEL_NAME);
-  } catch (e) {
-    console.warn('BroadcastChannel not supported in this context', e);
-  }
-}
 
 export { getReportTimestampMs } from './ClusterEngine';
 
@@ -177,10 +163,9 @@ class CitizenReportServiceSingleton {
   }
 
   /**
-   * Fetches all current reports from local memory/storage instantly.
+   * Fetches all current reports from local memory instantly.
    */
   public async getCitizenReports(): Promise<CitizenReport[]> {
-    await this.refreshAndEmit();
     return Array.from(this.currentReportsMap.values());
   }
 
@@ -206,7 +191,6 @@ class CitizenReportServiceSingleton {
     } as CitizenReport;
     
     this.currentReportsMap.set(tempCitizenReport.id, tempCitizenReport);
-    await saveReportToIndexedDB(tempCitizenReport);
     this.notifyAll();
 
     // Cloud Firestore write (Single Source of Truth)
@@ -230,7 +214,6 @@ class CitizenReportServiceSingleton {
         // Replace temp report with final report
         this.currentReportsMap.delete(tempCitizenReport.id);
         this.currentReportsMap.set(finalReport.id, finalReport);
-        await saveReportToIndexedDB(finalReport);
         this.notifyAll();
         return finalReport;
       } catch (err: any) {
@@ -249,7 +232,6 @@ class CitizenReportServiceSingleton {
     if (!existing) return;
     const updated = { ...existing, ...updates };
     this.currentReportsMap.set(id, updated);
-    await saveReportToIndexedDB(updated);
 
     const db = getSafeFirestoreInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
@@ -291,7 +273,6 @@ class CitizenReportServiceSingleton {
    */
   public async deleteCitizenReport(id: string): Promise<void> {
     this.currentReportsMap.delete(id);
-    await deleteReportFromIndexedDB(id);
 
     const db = getSafeFirestoreInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
@@ -411,18 +392,8 @@ class CitizenReportServiceSingleton {
     this.isStartingListener = true;
 
     try {
-      // 1. Initial local load from IndexedDB and localStorage
-      await this.refreshAndEmit();
-
-      // If the component unmounted while waiting for IndexedDB, abort.
-      if (this.activeListeners.size === 0) {
-        return;
-      }
-
-      // 2. Setup single global Cloud Firestore subscription
       const db = getSafeFirestoreInstance();
       if (db) {
-        // Complete canonical dataset without limit or order to prevent data loss on un-indexed legacy reports
         const q = query(collection(db, 'citizen_reports'));
         this.unsubRealtime = onSnapshot(
           q,
@@ -432,57 +403,16 @@ class CitizenReportServiceSingleton {
               rawReports.push(normalizeCitizenReportDocument(doc.id, doc.data()));
             });
 
-            // Secondary sort: ensure legacy docs missing timestamp are sorted stably by ID
-            const incomingCloudReports = rawReports.sort((a, b) => {
-              const timeA = a.createdAt || 0;
-              const timeB = b.createdAt || 0;
-              if (timeA !== timeB) {
-                return timeB - timeA; // Descending
-              }
-              // Deterministic secondary sort
-              return b.id.localeCompare(a.id);
-            });
-
-            const cloudSubmissionIds = new Set<string>();
-            for (const r of incomingCloudReports) {
-              if (r.clientSubmissionId) cloudSubmissionIds.add(r.clientSubmissionId);
-            }
-
-            // Check if we have any pending local reports created offline while connecting that need pushing up
-            for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
-              if (key.startsWith('live-') || (rep.clientSubmissionId && !cloudSubmissionIds.has(rep.clientSubmissionId) && !key.startsWith('rep-') && key !== 'mock')) {
-                try {
-                  const compressedPhoto = rep.photoBase64 ? await compressPhotoForCloudSync(rep.photoBase64) : undefined;
-                  await setDoc(doc(db, 'citizen_reports', rep.id), {
-                    ...rep,
-                    photoBase64: compressedPhoto,
-                    imageStoragePath: rep.imageStoragePath,
-                    createdAt: serverTimestamp(),
-                  });
-                } catch (err) {
-                  // ignore
-                }
-              }
-            }
-
-            // Clear old cloud keys from map and replace with latest exact state from Cloud Firestore
-            for (const key of Array.from(this.currentReportsMap.keys())) {
-              if (!key.startsWith('rep-') && !key.startsWith('live-') && key !== 'mock') {
-                this.currentReportsMap.delete(key);
-              }
-            }
-
-            for (const normalized of incomingCloudReports) {
-              if (normalized.clientSubmissionId && this.currentReportsMap.has(normalized.clientSubmissionId)) {
-                this.currentReportsMap.delete(normalized.clientSubmissionId);
-              }
+            // Wipe local map and strictly mirror Firestore
+            this.currentReportsMap.clear();
+            for (const normalized of rawReports) {
               this.currentReportsMap.set(normalized.id, normalized);
             }
 
             this.notifyAll();
 
             // Development audit logs
-            console.log(`[Consistency Audit] Canonical snapshot received. Docs: ${snapshot.docs.length} -> Normalized: ${incomingCloudReports.length} -> Store Base: ${this.currentReportsMap.size}`);
+            console.log(`[Strict Sync] Canonical snapshot received. Docs: ${snapshot.docs.length} -> Local Store: ${this.currentReportsMap.size}`);
           },
           (err) => {
             console.error('🔥 Firestore onSnapshot subscription error:', err.message);
@@ -492,15 +422,12 @@ class CitizenReportServiceSingleton {
       }
     } catch (e: any) {
       console.error('🔥 Error connecting to Cloud Firestore:', e);
-      this.notifyAll('Failed to initialize local storage or cloud connection.');
+      this.notifyAll('Failed to initialize cloud connection.');
     } finally {
       this.isStartingListener = false;
     }
 
-    // 3. Setup window and BroadcastChannel listeners
     if (typeof window !== 'undefined') {
-      window.addEventListener('liveReportPublished', () => this.refreshAndEmit());
-      window.addEventListener('storage', () => this.refreshAndEmit());
       window.addEventListener('cloudConfigChanged', () => {
         if (this.unsubRealtime) {
           this.unsubRealtime();
@@ -509,54 +436,6 @@ class CitizenReportServiceSingleton {
         this.startSingletonListener();
       });
     }
-    if (broadcastChannel) {
-      broadcastChannel.addEventListener('message', (evt) => {
-        if (evt.data?.type === 'NEW_REPORT' && evt.data.report) {
-          const data = evt.data.report;
-          const newRep = normalizeCitizenReportDocument(data.id, data);
-          this.currentReportsMap.set(newRep.id, newRep);
-          this.notifyAll();
-        }
-      });
-    }
-  }
-
-  private async refreshAndEmit() {
-    const indexedDBReports = await getAllReportsFromIndexedDB();
-    const existingSubmissionIds = new Set<string>();
-    for (const r of this.currentReportsMap.values()) {
-      if (r.clientSubmissionId) existingSubmissionIds.add(r.clientSubmissionId);
-    }
-
-    for (const item of indexedDBReports) {
-      const norm = normalizeCitizenReportDocument(item.id || "local", item);
-      if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
-        continue;
-      }
-      this.currentReportsMap.set(norm.id, norm);
-      if (norm.clientSubmissionId) existingSubmissionIds.add(norm.clientSubmissionId);
-    }
-
-    try {
-      const rawLocal = localStorage.getItem(STORAGE_KEY_REPORTS);
-      if (rawLocal) {
-        const parsed = JSON.parse(rawLocal);
-        for (const item of parsed) {
-          const norm = normalizeCitizenReportDocument(item.id || "local", item);
-          if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
-            continue;
-          }
-          if (!this.currentReportsMap.has(norm.id)) {
-            this.currentReportsMap.set(norm.id, norm);
-            if (norm.clientSubmissionId) existingSubmissionIds.add(norm.clientSubmissionId);
-          }
-        }
-      }
-    } catch (e) {
-      // ignore parse errors
-    }
-
-    this.notifyAll();
   }
 }
 
