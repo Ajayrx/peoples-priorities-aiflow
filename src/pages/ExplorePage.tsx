@@ -159,7 +159,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
   const [activeListTab, setActiveListTab] = useState<'CLUSTERS' | 'REPORTS'>('CLUSTERS');
 
   // Consume canonical single source of truth
-  const { hotspots, reports } = useCitizenStore();
+  const { hotspots, reports, isLoading, error } = useCitizenStore();
 
   // 1. Filter reports and hotspots by region FIRST so the engine builds strictly region-scoped clusters
   const { allCanonicalReports, allCanonicalHotspots } = useMemo(() => {
@@ -849,7 +849,19 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
             {/* Scrollable Hotspot Cards or Citizen Complaints List */}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-w-0">
-              {activeListTab === 'CLUSTERS' ? (
+              {isLoading ? (
+                <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center space-y-4 animate-pulse">
+                  <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
+                    <RefreshCw className="w-6 h-6 text-teal-600 animate-spin" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-500">Synchronizing Spatial Data...</p>
+                </div>
+              ) : error ? (
+                <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center flex flex-col items-center">
+                  <span className="text-rose-500 font-bold mb-2">⚠️ Sync Error</span>
+                  <p className="text-xs text-rose-700 font-medium">{error}</p>
+                </div>
+              ) : activeListTab === 'CLUSTERS' ? (
                 filteredHotspots.length > 0 ? (
                   filteredHotspots.map((hs, idx) => {
                     const isSelected = activeHotspot?.id === hs.id;
@@ -907,7 +919,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                     <div className="font-extrabold text-slate-800 text-sm">
                       No active density clusters in {region.constituency.replace(' (Demo Region)', '')}
                     </div>
-                    {filteredReports.length > 0 ? (
+                    {!isLoading && !error && reports.length === 0 ? (
+                      <p className="text-xs text-slate-500 mt-2">
+                        No citizen reports have been recorded in the database yet.
+                      </p>
+                    ) : filteredReports.length > 0 ? (
                       <div className="space-y-3 pt-1">
                         <p className="text-xs text-teal-900 font-bold max-w-xs mx-auto bg-teal-50 p-3 rounded-xl border border-teal-200">
                           Found <strong className="text-teal-700 font-black">{filteredReports.length} verified citizen complaints</strong> in this exact area!
@@ -997,10 +1013,14 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                     <div className="font-extrabold text-slate-800 text-sm">
                       No individual reports in {region.constituency.replace(' (Demo Region)', '')}
                     </div>
-                    {filteredHotspots.length > 0 ? (
+                    {!isLoading && !error && reports.length === 0 ? (
+                      <p className="text-xs text-slate-500 mt-2">
+                        No citizen reports have been recorded in the database yet.
+                      </p>
+                    ) : filteredHotspots.length > 0 ? (
                       <div className="space-y-3 pt-1">
                         <p className="text-xs text-teal-900 font-bold max-w-xs mx-auto bg-teal-50 p-3 rounded-xl border border-teal-200">
-                          Found <strong className="text-teal-700 font-black">{filteredHotspots.length} density cluster{filteredHotspots.length > 1 ? 's' : ''}</strong> in this exact area!
+                           Found <strong className="text-teal-700 font-black">{filteredHotspots.length} density cluster{filteredHotspots.length > 1 ? 's' : ''}</strong> in this exact area!
                         </p>
                         <button
                           onClick={() => setActiveListTab('CLUSTERS')}

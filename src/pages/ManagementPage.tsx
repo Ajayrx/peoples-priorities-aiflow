@@ -26,7 +26,7 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
   const { t } = useLanguage();
   const isDemoRegion = region.constituency.includes('Koraput');
 
-  const { reports } = useCitizenStore();
+  const { reports, isLoading, error } = useCitizenStore();
 
   const totalGeoRecords = reports.length + MOCK_DATASET_HEALTH.reduce((sum, d) => sum + d.recordsCount, 0);
 
@@ -113,7 +113,13 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
             </div>
             <div>
               <div className="text-[11px] font-mono font-bold text-slate-400 uppercase">Total Geo Records</div>
-              <div className="text-xl font-mono font-black text-slate-900 mt-0.5">{totalGeoRecords.toLocaleString()}</div>
+              <div className="text-xl font-mono font-black text-slate-900 mt-0.5">
+                {isLoading ? (
+                  <span className="animate-pulse text-slate-300">...</span>
+                ) : (
+                  totalGeoRecords.toLocaleString()
+                )}
+              </div>
             </div>
           </div>
 
@@ -123,7 +129,9 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
             </div>
             <div>
               <div className="text-[11px] font-mono font-bold text-slate-400 uppercase">Schema Integrity</div>
-              <div className="text-xl font-mono font-black text-emerald-700 mt-0.5">99.4% Verified</div>
+              <div className="text-xl font-mono font-black text-emerald-700 mt-0.5">
+                {error ? <span className="text-rose-600 text-sm">{error}</span> : isLoading ? <span className="animate-pulse text-slate-300">...</span> : '99.4% Verified'}
+              </div>
             </div>
           </div>
 

@@ -35,7 +35,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
   const [showClustersView, setShowClustersView] = useState<boolean>(false);
 
   // Consume canonical single source of truth
-  const { hotspots, reports } = useCitizenStore();
+  const { hotspots, reports, isLoading, error } = useCitizenStore();
 
   // 1. Filter reports and hotspots by region FIRST so all downstream engine/metrics are perfectly aligned
   const { allCanonicalReports, allCanonicalHotspots } = useMemo(() => {
@@ -564,18 +564,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
                 </div>
 
                 <div className="space-y-2.5 sm:space-y-3 max-h-[500px] sm:max-h-[440px] overflow-y-auto pr-1 min-w-0">
-                  {showClustersView ? (
+                  {isLoading ? (
+                    <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center space-y-4 animate-pulse">
+                      <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
+                        <RefreshCw className="w-6 h-6 text-teal-600 animate-spin" />
+                      </div>
+                      <p className="text-sm font-bold text-slate-500">Synchronizing Citizen Reports...</p>
+                    </div>
+                  ) : error ? (
+                    <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-center flex flex-col items-center">
+                      <span className="text-rose-500 font-bold mb-2">⚠️ Sync Error</span>
+                      <p className="text-xs text-rose-700 font-medium">{error}</p>
+                    </div>
+                  ) : showClustersView ? (
                     dynamicHotspots.length === 0 ? (
                       <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
-                        No demand clusters available currently for the selected filters.
+                        No priority hotspots detected in this region.
                       </div>
                     ) : (
                       dynamicHotspots.map(renderClusterCard)
                     )
                   ) : (
-                    dynamicHotspots.length === 0 && displayedPriorityReports.length === 0 ? (
+                    reports.length === 0 ? (
                       <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
                         No citizen submissions recorded yet. Submit a Voice Memo, Photo, or Text note on the Report tab to see instant priority ranking here!
+                      </div>
+                    ) : displayedPriorityReports.length === 0 && dynamicHotspots.length === 0 ? (
+                      <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500 font-medium break-words">
+                        No citizen reports match the selected filters.
                       </div>
                     ) : (
                       <>

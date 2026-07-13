@@ -8,6 +8,7 @@ interface CitizenStoreState {
   rankedPriorityList: CitizenReport[];
   stats: DashboardStats;
   isLoading: boolean;
+  error: string | null;
   submitReport: (payload: Partial<CitizenReport> & { photoBase64?: string; imageStoragePath?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }) => Promise<CitizenReport>;
   updateReport: (id: string, updates: Partial<CitizenReport>) => Promise<void>;
   deleteReport: (id: string) => Promise<void>;
@@ -28,14 +29,22 @@ export const CitizenStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     avgAiConfidence: 96,
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = CitizenReportService.subscribe((newReports, newHotspots, newStats, newRankedList) => {
-      setReports(newReports);
-      setHotspots(newHotspots);
-      setStats(newStats);
-      setRankedPriorityList(newRankedList);
-      setIsLoading(false);
+    const unsubscribe = CitizenReportService.subscribe((newReports, newHotspots, newStats, newRankedList, errStr) => {
+      if (errStr) {
+        setError(errStr);
+        setIsLoading(false);
+        // DO NOT setReports([]) here. Preserve existing state.
+      } else {
+        setReports(newReports);
+        setHotspots(newHotspots);
+        setStats(newStats);
+        setRankedPriorityList(newRankedList);
+        setError(null);
+        setIsLoading(false);
+      }
     });
 
     return () => unsubscribe();
@@ -65,6 +74,7 @@ export const CitizenStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         rankedPriorityList,
         stats,
         isLoading,
+        error,
         submitReport,
         updateReport,
         deleteReport,

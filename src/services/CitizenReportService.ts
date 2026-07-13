@@ -86,8 +86,9 @@ function getSafeFirestoreInstance() {
 }
 
 class CitizenReportServiceSingleton {
-  private activeListeners: Set<(reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void> = new Set();
+  private activeListeners: Set<(reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[], error?: string | null) => void> = new Set();
   private unsubRealtime: (() => void) | null = null;
+  private isStartingListener: boolean = false;
   private currentReportsMap: Map<string, CitizenReport> = new Map();
   private baseHotspots: Hotspot[] = [];
 
@@ -131,7 +132,7 @@ class CitizenReportServiceSingleton {
           timestampStr = formatDayDateTime(new Date());
         }
       } else {
-        timestampStr = formatDayDateTime(new Date());
+        timestampStr = formatDayDateTime(new Date(0)); // Deterministic legacy fallback (epoch 0)
       }
     } else if (typeof timestampStr === 'string' && !timestampStr.includes('•') && !timestampStr.includes('ago')) {
       const parsed = new Date(timestampStr);
@@ -250,12 +251,15 @@ class CitizenReportServiceSingleton {
    */
   public getRankedPriorityList(reports: CitizenReport[]): CitizenReport[] {
     return [...reports].sort((a, b) => {
-      const timeA = getReportTimestampMs(a);
-      const timeB = getReportTimestampMs(b);
+      const timeA = getReportTimestampMs(a) || 0;
+      const timeB = getReportTimestampMs(b) || 0;
       if (timeB !== timeA) return timeB - timeA;
-      const scoreA = a.priorityScore || a.aiConfidence || 0;
-      const scoreB = b.priorityScore || b.aiConfidence || 0;
-      return scoreB - scoreA;
+      // Stable secondary key sort (Document ID) to ensure deterministic rendering
+      if (a.id && b.id) {
+         if (a.id < b.id) return 1;
+         if (a.id > b.id) return -1;
+      }
+      return 0;
     });
   }
 
@@ -483,7 +487,7 @@ class CitizenReportServiceSingleton {
    * Guarantees EXACTLY ONE active Realtime Database listener regardless of how many pages subscribe.
    */
   public subscribe(
-    onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void
+    onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[], error?: string | null) => void
   ): () => void {
     this.activeListeners.add(onUpdate);
 
@@ -547,44 +551,56 @@ class CitizenReportServiceSingleton {
     });
 
     return Array.from(map.values()).sort((a, b) => {
-      const timeA = getReportTimestampMs(a);
-      const timeB = getReportTimestampMs(b);
+      const timeA = getReportTimestampMs(a) || 0;
+      const timeB = getReportTimestampMs(b) || 0;
       if (timeB !== timeA) return timeB - timeA;
-      const scoreA = a.priorityScore || a.aiConfidence || 90;
-      const scoreB = b.priorityScore || b.aiConfidence || 90;
-      return scoreB - scoreA;
+      // Stable secondary key sort (Document ID) to ensure deterministic rendering
+      if (a.id && b.id) {
+         if (a.id < b.id) return 1;
+         if (a.id > b.id) return -1;
+      }
+      return 0;
     });
   }
 
-  private emitToListener(onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[]) => void) {
+  private emitToListener(onUpdate: (reports: CitizenReport[], hotspots: Hotspot[], stats: DashboardStats, rankedList: CitizenReport[], error?: string | null) => void, errorStr?: string | null) {
     const rawReportsList = Array.from(this.currentReportsMap.values());
     const hotspotsList = this.getHotspots(rawReportsList, this.baseHotspots);
     const unifiedReports = this.getAllUnifiedReports(rawReportsList, hotspotsList);
     const stats = this.getDashboardStats(unifiedReports, hotspotsList);
     const rankedList = this.getRankedPriorityList(unifiedReports);
-    onUpdate(unifiedReports, hotspotsList, stats, rankedList);
+    onUpdate(unifiedReports, hotspotsList, stats, rankedList, errorStr);
   }
 
-  private notifyAll() {
+  private notifyAll(errorStr?: string | null) {
     const rawReportsList = Array.from(this.currentReportsMap.values());
     const hotspotsList = this.getHotspots(rawReportsList, this.baseHotspots);
     const unifiedReports = this.getAllUnifiedReports(rawReportsList, hotspotsList);
     const stats = this.getDashboardStats(unifiedReports, hotspotsList);
     const rankedList = this.getRankedPriorityList(unifiedReports);
     for (const listener of this.activeListeners) {
-      listener(unifiedReports, hotspotsList, stats, rankedList);
+      listener(unifiedReports, hotspotsList, stats, rankedList, errorStr);
     }
   }
 
   private async startSingletonListener() {
-    // 1. Initial local load from IndexedDB and localStorage
-    await this.refreshAndEmit();
+    if (this.isStartingListener || this.unsubRealtime) return;
+    this.isStartingListener = true;
 
-    // 2. Setup single global Cloud Firestore subscription
-    const db = getSafeFirestoreInstance();
-    if (db && !this.unsubRealtime) {
-      try {
-        const q = query(collection(db, 'citizen_reports'), orderBy('createdAt', 'desc'), limit(150));
+    try {
+      // 1. Initial local load from IndexedDB and localStorage
+      await this.refreshAndEmit();
+
+      // If the component unmounted while waiting for IndexedDB, abort.
+      if (this.activeListeners.size === 0) {
+        return;
+      }
+
+      // 2. Setup single global Cloud Firestore subscription
+      const db = getSafeFirestoreInstance();
+      if (db) {
+        // Complete canonical dataset without limit or order to prevent data loss on un-indexed legacy reports
+        const q = query(collection(db, 'citizen_reports'));
         this.unsubRealtime = onSnapshot(
           q,
           async (snapshot) => {
@@ -632,14 +648,21 @@ class CitizenReportServiceSingleton {
             }
 
             this.notifyAll();
+
+            // Development audit logs
+            console.log(`[Consistency Audit] Canonical snapshot received. Docs: ${snapshot.docs.length} -> Normalized: ${incomingCloudReports.length} -> Store Base: ${this.currentReportsMap.size}`);
           },
           (err) => {
             console.error('🔥 Firestore onSnapshot subscription error:', err.message);
+            this.notifyAll('Unable to synchronize live reports. Check your internet connection.');
           }
         );
-      } catch (e) {
-        console.error('🔥 Error connecting to Cloud Firestore:', e);
       }
+    } catch (e: any) {
+      console.error('🔥 Error connecting to Cloud Firestore:', e);
+      this.notifyAll('Failed to initialize local storage or cloud connection.');
+    } finally {
+      this.isStartingListener = false;
     }
 
     // 3. Setup window and BroadcastChannel listeners
