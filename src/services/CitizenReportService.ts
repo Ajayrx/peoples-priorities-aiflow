@@ -12,11 +12,12 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { getCloudConfig, hasValidFirebaseConfig } from './cloudConfig';
-import type { CitizenReport, Hotspot, CategoryType, PriorityLevel, DashboardStats } from '../types';
+import type { CitizenReport, CitizenReportSubmission, Hotspot, DashboardStats } from '../types';
 import { saveReportToIndexedDB, getAllReportsFromIndexedDB, deleteReportFromIndexedDB } from './localLedgerDB';
 import { mergeLiveReportsIntoClusters } from '../utils/clusterMerger';
 import { runClusterEngine, getReportTimestampMs } from './ClusterEngine';
-import type { LiveCitizenReport } from './liveCloudBus';
+
+import { normalizeReportSubmission, validateCanonicalReportWrite, normalizeCitizenReportDocument } from '../utils/reportNormalizer';
 
 const STORAGE_KEY_REPORTS = 'peoples_priorities_live_reports_v1';
 const BUS_CHANNEL_NAME = 'peoples_priorities_realtime_sync';
@@ -90,157 +91,14 @@ class CitizenReportServiceSingleton {
   private currentReportsMap: Map<string, CitizenReport> = new Map();
   private baseHotspots: Hotspot[] = [];
 
-  /**
-   * Normalizes any raw data object (from Firestore, IndexedDB, or localStorage) into a canonical CitizenReport.
-   */
-  public normalizeReport(raw: any): CitizenReport {
-    const id = raw.id || `rep-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-    const category: CategoryType = raw.category || 'Road';
-    const priorityLevel: PriorityLevel = raw.priorityLevel || raw.priority || 'HIGH';
-    const priorityScore = Number(raw.priorityScore || raw.aiConfidence || raw.aiProcessing?.aiConfidenceScore || 94);
-    const title = raw.title || raw.detectedIssue || raw.name || 'Verified Locality Infrastructure Defect';
-    const description = raw.description || raw.urgencyReasoning || raw.rawText || 'Verified citizen civic intake requiring immediate evaluation.';
-    const photoUrl = raw.photoBase64 || raw.rawMediaUrl || (raw.images && raw.images.length > 0 ? raw.images[0] : undefined);
-    const intakeMethod: 'VOICE' | 'PHOTO' | 'TEXT' = raw.inputMethod || raw.intakeType || (photoUrl ? 'PHOTO' : 'TEXT');
-    
-    const formatDayDateTime = (dateObj: Date): string => {
-      if (isNaN(dateObj.getTime())) return 'Sat, 11 Jul • 11:45 AM';
-      const day = dateObj.toLocaleDateString('en-IN', { weekday: 'short' });
-      const date = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      const time = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
-      return `${day}, ${date} • ${time}`;
-    };
 
-    let timestampStr = raw.timestamp;
-    if (!timestampStr || timestampStr === 'Just now' || timestampStr === 'Updated just now' || timestampStr.toLowerCase().includes('just now')) {
-      if (raw.createdAt) {
-        if (typeof raw.createdAt === 'number' && raw.createdAt > 1000000000) {
-          const ms = raw.createdAt > 100000000000 ? raw.createdAt : raw.createdAt * 1000;
-          timestampStr = formatDayDateTime(new Date(ms));
-        } else if (typeof raw.createdAt?.toDate === 'function') {
-          timestampStr = formatDayDateTime(raw.createdAt.toDate());
-        } else if (raw.createdAt?.seconds !== undefined) {
-          timestampStr = formatDayDateTime(new Date(raw.createdAt.seconds * 1000));
-        } else if (raw.createdAt instanceof Date) {
-          timestampStr = formatDayDateTime(raw.createdAt);
-        } else if (typeof raw.createdAt === 'string') {
-          const parsed = new Date(raw.createdAt);
-          timestampStr = !isNaN(parsed.getTime()) ? formatDayDateTime(parsed) : raw.createdAt;
-        } else {
-          timestampStr = formatDayDateTime(new Date());
-        }
-      } else {
-        timestampStr = formatDayDateTime(new Date(0)); // Deterministic legacy fallback (epoch 0)
-      }
-    } else if (typeof timestampStr === 'string' && !timestampStr.includes('•') && !timestampStr.includes('ago')) {
-      const parsed = new Date(timestampStr);
-      if (!isNaN(parsed.getTime())) {
-        timestampStr = formatDayDateTime(parsed);
-      }
-    }
-    
-    const rawLoc = raw.location || {};
-    const location = {
-      lat: rawLoc.lat || raw.latitude || 20.5937,
-      lng: rawLoc.lng || raw.longitude || 78.9629,
-      state: rawLoc.state || raw.state || 'India',
-      district: rawLoc.district || raw.district || 'Nationwide District',
-      constituency: rawLoc.constituency || raw.constituency || 'National PC',
-      blockOrTown: rawLoc.blockOrTown || raw.address || 'Verified Civic Locality',
-      villageOrWard: rawLoc.villageOrWard || 'Verified Citizen Pin',
-    };
 
-    const aiSummary = raw.aiSummary || raw.aiProcessing?.aiSummary || description;
-
-    return {
-      id,
-      title,
-      description,
-      category,
-      priority: priorityLevel,
-      status: raw.status || raw.verificationStatus || 'VERIFIED',
-      latitude: location.lat || 20.5937,
-      longitude: location.lng || 78.9629,
-      address: raw.address || location.blockOrTown || 'Verified Locality',
-      images: photoUrl ? [photoUrl] : (raw.images || []),
-      voiceUrl: raw.voiceUrl,
-      createdAt: raw.createdAt || timestampStr,
-      updatedAt: raw.updatedAt || timestampStr,
-      userId: raw.userId || 'anonymous-citizen',
-      verificationStatus: raw.verificationStatus || raw.status || 'VERIFIED',
-      aiSummary,
-      aiCategory: raw.aiCategory || category,
-      aiPriority: raw.aiPriority || priorityLevel,
-      aiConfidence: raw.aiConfidence || priorityScore,
-      hotspotId: raw.hotspotId || raw.assignedHotspotId,
-      clientSubmissionId: raw.clientSubmissionId || (raw.id && typeof raw.id === 'string' && raw.id.startsWith('rep-') ? raw.id : undefined),
-
-      // Canonical mappings for backward compatibility across all UI components
-      timestamp: timestampStr,
-      location: {
-        lat: location.lat || 20.5937,
-        lng: location.lng || 78.9629,
-        state: location.state || 'India',
-        district: location.district || 'Nationwide District',
-        constituency: location.constituency || 'National PC',
-        blockOrTown: location.blockOrTown || raw.address || 'Verified Civic Locality',
-        villageOrWard: location.villageOrWard || 'Ward / Village',
-      },
-      inputMethod: intakeMethod,
-      intakeType: intakeMethod,
-      rawText: description,
-      detectedIssue: title,
-      urgencyReasoning: description,
-      priorityLevel: priorityLevel,
-      priorityScore: priorityScore,
-      aiProcessing: raw.aiProcessing || {
-        transcription: description,
-        imageDefectDetected: photoUrl ? title : undefined,
-        extractedKeywords: ['Citizen Report', category, location.blockOrTown || 'Locality'],
-        sentimentUrgency: (priorityLevel === 'CRITICAL' || priorityLevel === 'HIGH' ? priorityLevel : 'NORMAL') as any,
-        aiConfidenceScore: priorityScore,
-        aiSummary: aiSummary,
-      },
-      assignedHotspotId: raw.assignedHotspotId || raw.hotspotId,
-      duplicateStatus: raw.duplicateStatus || 'UNIQUE',
-    };
-  }
-
-  /**
-   * Converts canonical CitizenReport array into LiveCitizenReport array for clusterMerger compatibility.
-   */
-  public toLiveReports(reports: CitizenReport[]): LiveCitizenReport[] {
-    return reports.map((r) => ({
-      id: r.id,
-      name: r.title || 'Verified Locality Demand',
-      category: r.category,
-      priorityLevel: r.priorityLevel || r.priority || 'HIGH',
-      priorityScore: r.priorityScore || r.aiConfidence || 94,
-      detectedIssue: r.detectedIssue || r.title || 'Verified Infrastructure Defect & Transit Gap',
-      urgencyReasoning: r.urgencyReasoning || r.description || 'Verified citizen civic intake requiring immediate evaluation.',
-      photoBase64: r.photoBase64 || r.rawMediaUrl || (r.images?.[0]),
-      imageStoragePath: r.imageStoragePath,
-      voiceUrl: r.voiceUrl,
-      intakeType: r.intakeType || r.inputMethod || 'TEXT',
-      timestamp: (r.timestamp && !r.timestamp.toLowerCase().includes('just now')) ? r.timestamp : new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' • ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase(),
-      location: {
-        lat: r.location.lat,
-        lng: r.location.lng,
-        state: r.location.state,
-        district: r.location.district,
-        constituency: r.location.constituency,
-        blockOrTown: r.location.blockOrTown,
-        villageOrWard: r.location.villageOrWard,
-      },
-      isRealCloudItem: Boolean(r.id.startsWith('live-') || r.id !== 'mock'),
-    }));
-  }
 
   /**
    * Generates canonical Hotspots from canonical CitizenReports.
    */
   public getHotspots(reports: CitizenReport[], baseList: Hotspot[] = []): Hotspot[] {
-    const liveReps = this.toLiveReports(reports);
+    const liveReps = reports;
     return mergeLiveReportsIntoClusters(baseList, liveReps);
   }
 
@@ -272,7 +130,7 @@ class CitizenReportServiceSingleton {
     const categoryCounts: Record<string, number> = {};
 
     for (const rep of reports) {
-      if (rep.priorityLevel === 'CRITICAL' || rep.priority === 'CRITICAL') {
+      if (rep.priorityLevel === 'CRITICAL') {
         criticalReports += 1;
       }
       if (rep.verificationStatus === 'VERIFIED' || rep.status === 'VERIFIED') {
@@ -329,83 +187,58 @@ class CitizenReportServiceSingleton {
   /**
    * Submits a new citizen report to IndexedDB, Cloud Firestore, and broadcasts across all tabs/pages.
    */
-  public async submitCitizenReport(payload: Partial<CitizenReport> & { photoBase64?: string; imageStoragePath?: string; detectedIssue?: string; urgencyReasoning?: string; intakeType?: 'VOICE' | 'PHOTO' | 'TEXT' }): Promise<CitizenReport> {
+  public async submitCitizenReport(payload: CitizenReportSubmission): Promise<CitizenReport> {
     const db = getSafeFirestoreInstance();
-    let newReportId = `live-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-
-    const now = new Date();
-    const day = now.toLocaleDateString('en-IN', { weekday: 'short' });
-    const date = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-    const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
-    const formattedNow = `${day}, ${date} • ${time}`;
-
-    const newReport = this.normalizeReport({
-      ...payload,
-      id: newReportId,
-      clientSubmissionId: payload.clientSubmissionId || newReportId,
-      createdAt: now.getTime(),
-      timestamp: formattedNow,
-    });
-
-    // Save to map initially
-    this.currentReportsMap.set(newReport.id, newReport);
+    const canonicalWrite = normalizeReportSubmission(payload);
+    
+    // Strict pre-flight validation
+    validateCanonicalReportWrite(canonicalWrite);
 
     // Save to IndexedDB (zero quota limit, holds full high-res images locally for prompt viewing)
-    await saveReportToIndexedDB(this.toLiveReports([newReport])[0]);
+    // Create a temporary CitizenReport for immediate optimistic UI
+    const tempReportId = `temp-${Date.now()}`;
+    const tempCitizenReport: CitizenReport = {
+      ...canonicalWrite,
+      id: tempReportId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      timestamp: 'Just now'
+    } as CitizenReport;
+    
+    this.currentReportsMap.set(tempCitizenReport.id, tempCitizenReport);
+    await saveReportToIndexedDB(tempCitizenReport);
+    this.notifyAll();
 
     // Cloud Firestore write (Single Source of Truth)
     if (db) {
       try {
         const docRef = doc(collection(db, 'citizen_reports'));
-        const compressedPhoto = newReport.photoBase64 ? await compressPhotoForCloudSync(newReport.photoBase64) : undefined;
-        await setDoc(docRef, {
-          ...newReport,
-          photoBase64: compressedPhoto,
-          imageStoragePath: newReport.imageStoragePath,
+        const compressedPhoto = canonicalWrite.photoBase64 ? await compressPhotoForCloudSync(canonicalWrite.photoBase64) : undefined;
+        
+        const finalPayload = {
+          ...canonicalWrite,
+          photoBase64: compressedPhoto || "",
           createdAt: serverTimestamp(),
-        });
+          updatedAt: serverTimestamp(),
+        };
+        
+        await setDoc(docRef, finalPayload);
         console.log('✅ Successfully published verified citizen complaint to Firestore! Document ID:', docRef.id);
 
-        const finalReport = this.normalizeReport({
-          ...newReport,
-          id: docRef.id,
-        });
-        this.currentReportsMap.delete(newReport.id);
+        const finalReport = normalizeCitizenReportDocument(docRef.id, finalPayload);
+        
+        // Replace temp report with final report
+        this.currentReportsMap.delete(tempCitizenReport.id);
         this.currentReportsMap.set(finalReport.id, finalReport);
-        await saveReportToIndexedDB(this.toLiveReports([finalReport])[0]);
+        await saveReportToIndexedDB(finalReport);
         this.notifyAll();
         return finalReport;
       } catch (err: any) {
         console.error('🔥 Firestore Write Failed:', err);
       }
     }
-
-    // Save to localStorage safely as offline fallback
-    try {
-      const rawLocal = localStorage.getItem(STORAGE_KEY_REPORTS);
-      const existing = rawLocal ? JSON.parse(rawLocal) : [];
-      const safeForLocal = {
-        ...newReport,
-        photoBase64: newReport.photoBase64 && newReport.photoBase64.length > 100000 ? undefined : newReport.photoBase64,
-        imageStoragePath: newReport.imageStoragePath,
-        intakeType: newReport.intakeType,
-        images: [],
-      };
-      const updated = [safeForLocal, ...existing].slice(0, 50);
-      localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(updated));
-    } catch (e) {
-      console.warn('localStorage quota warning (safely in IndexedDB):', e);
-    }
-
-    if (broadcastChannel) {
-      broadcastChannel.postMessage({ type: 'NEW_REPORT', report: newReport });
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('liveReportPublished', { detail: newReport }));
-    }
-
-    this.notifyAll();
-    return newReport;
+    
+    return tempCitizenReport;
   }
 
   /**
@@ -414,9 +247,9 @@ class CitizenReportServiceSingleton {
   public async updateCitizenReport(id: string, updates: Partial<CitizenReport>): Promise<void> {
     const existing = this.currentReportsMap.get(id);
     if (!existing) return;
-    const updated = this.normalizeReport({ ...existing, ...updates });
+    const updated = { ...existing, ...updates };
     this.currentReportsMap.set(id, updated);
-    await saveReportToIndexedDB(this.toLiveReports([updated])[0]);
+    await saveReportToIndexedDB(updated);
 
     const db = getSafeFirestoreInstance();
     if (db && !id.startsWith('live-') && id !== 'mock') {
@@ -513,8 +346,8 @@ class CitizenReportServiceSingleton {
     const addSafe = (r: CitizenReport) => {
       // Create a unique key for deduplication based on content and coordinates
       // (rounding coordinates to 4 decimal places, e.g. 11m precision)
-      const latKey = Number(r.latitude).toFixed(4);
-      const lngKey = Number(r.longitude).toFixed(4);
+      const latKey = Number(r.location.lat).toFixed(4);
+      const lngKey = Number(r.location.lng).toFixed(4);
       
       const cleanDesc = (r.description || '').trim().toLowerCase();
       const contentKey = `${latKey}_${lngKey}_${r.category}_${cleanDesc.slice(0, 80)}`;
@@ -536,15 +369,7 @@ class CitizenReportServiceSingleton {
 
     hotspotsList.forEach((hs) => {
       (hs.recentReports || []).forEach((r) => {
-        const norm = this.normalizeReport({
-          ...r,
-          assignedHotspotId: hs.id,
-          hotspotId: hs.id,
-          location: r.location || hs.location?.center || { lat: 20.5937, lng: 78.9629, blockOrTown: hs.location?.blockOrTown || 'Verified Locality' },
-          latitude: r.latitude || r.location?.lat || hs.location?.center?.lat || 20.5937,
-          longitude: r.longitude || r.location?.lng || hs.location?.center?.lng || 78.9629,
-        });
-        addSafe(norm);
+        addSafe(r);
       });
     });
 
@@ -602,17 +427,26 @@ class CitizenReportServiceSingleton {
         this.unsubRealtime = onSnapshot(
           q,
           async (snapshot) => {
-            const cloudSubmissionIds = new Set<string>();
-            const incomingCloudReports: CitizenReport[] = [];
-
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              const normalized = this.normalizeReport({ ...data, id: docSnap.id });
-              incomingCloudReports.push(normalized);
-              if (normalized.clientSubmissionId) {
-                cloudSubmissionIds.add(normalized.clientSubmissionId);
-              }
+            const rawReports: CitizenReport[] = [];
+            snapshot.forEach((doc) => {
+              rawReports.push(normalizeCitizenReportDocument(doc.id, doc.data()));
             });
+
+            // Secondary sort: ensure legacy docs missing timestamp are sorted stably by ID
+            const incomingCloudReports = rawReports.sort((a, b) => {
+              const timeA = a.createdAt || 0;
+              const timeB = b.createdAt || 0;
+              if (timeA !== timeB) {
+                return timeB - timeA; // Descending
+              }
+              // Deterministic secondary sort
+              return b.id.localeCompare(a.id);
+            });
+
+            const cloudSubmissionIds = new Set<string>();
+            for (const r of incomingCloudReports) {
+              if (r.clientSubmissionId) cloudSubmissionIds.add(r.clientSubmissionId);
+            }
 
             // Check if we have any pending local reports created offline while connecting that need pushing up
             for (const [key, rep] of Array.from(this.currentReportsMap.entries())) {
@@ -678,8 +512,9 @@ class CitizenReportServiceSingleton {
     if (broadcastChannel) {
       broadcastChannel.addEventListener('message', (evt) => {
         if (evt.data?.type === 'NEW_REPORT' && evt.data.report) {
-          const norm = this.normalizeReport(evt.data.report);
-          this.currentReportsMap.set(norm.id, norm);
+          const data = evt.data.report;
+          const newRep = normalizeCitizenReportDocument(data.id, data);
+          this.currentReportsMap.set(newRep.id, newRep);
           this.notifyAll();
         }
       });
@@ -694,7 +529,7 @@ class CitizenReportServiceSingleton {
     }
 
     for (const item of indexedDBReports) {
-      const norm = this.normalizeReport(item);
+      const norm = normalizeCitizenReportDocument(item.id || "local", item);
       if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
         continue;
       }
@@ -707,7 +542,7 @@ class CitizenReportServiceSingleton {
       if (rawLocal) {
         const parsed = JSON.parse(rawLocal);
         for (const item of parsed) {
-          const norm = this.normalizeReport(item);
+          const norm = normalizeCitizenReportDocument(item.id || "local", item);
           if (norm.clientSubmissionId && existingSubmissionIds.has(norm.clientSubmissionId) && norm.id.startsWith('rep-')) {
             continue;
           }

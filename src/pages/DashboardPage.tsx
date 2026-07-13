@@ -48,9 +48,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
         ? true
         : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
           (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
-          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+          (rep.location.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.location.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.location.blockOrTown || '').toLowerCase().includes('semiliguda'));
     });
 
     const filteredHotspots = hotspots.filter((hs) => {
@@ -225,11 +225,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ region, onNavigate
           </div>
         </div>
       );
-    } else if (rep.inputMethod === 'PHOTO' || rep.rawMediaUrl || (rep as any).intakeType === 'PHOTO') {
+    } else if (rep.inputMethod === 'PHOTO' || rep.photoBase64 || rep.intakeType === 'PHOTO') {
       return (
         <div key={rep.id} className="bg-emerald-50/80 border border-emerald-300 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start gap-3 sm:gap-4 shadow-2xs min-w-0 w-full overflow-hidden">
-          {rep.rawMediaUrl && (
-            <img src={rep.rawMediaUrl} alt="Reported defect" className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-xl border-2 border-emerald-400 shadow-sm shrink-0" />
+          {rep.photoBase64 && (
+            <img src={rep.photoBase64} alt="Reported defect" className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-xl border-2 border-emerald-400 shadow-sm shrink-0" />
           )}
           <div className="min-w-0 flex-1 w-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-1 min-w-0">

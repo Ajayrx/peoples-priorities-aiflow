@@ -23,61 +23,96 @@ export interface Region {
 
 export type PriorityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'MONITORED';
 
-export interface CitizenReport {
-  id: string;
-  name?: string;
+export interface CitizenReportSubmission {
+  clientSubmissionId?: string;
+  category?: string;
   title?: string;
   description?: string;
-  category: CategoryType;
-  priority?: PriorityLevel;
-  status?: string;
-  latitude?: number;
-  longitude?: number;
-  address?: string;
-  images?: string[];
-  voiceUrl?: string;
-  createdAt?: string | number;
-  updatedAt?: string | number;
-  userId?: string;
-  verificationStatus?: 'VERIFIED' | 'FLAGGED_LOW_CONFIDENCE' | 'PENDING_FIELD_CHECK' | string;
+  rawText?: string;
+  transcription?: string;
   aiSummary?: string;
+  detectedIssue?: string;
+  urgencyReasoning?: string;
+  
+  inputMethod?: 'VOICE' | 'PHOTO' | 'TEXT';
+  intakeType?: 'VOICE' | 'PHOTO' | 'TEXT';
+  
+  photoBase64?: string;
+  imageStoragePath?: string;
+  images?: string[];
+  rawMediaUrl?: string;
+  voiceUrl?: string;
+  
   aiCategory?: string;
-  aiPriority?: string;
   aiConfidence?: number;
-  hotspotId?: string;
-  clientSubmissionId?: string;
-
-  // Backwards-compatible canonical mappings for UI components
-  timestamp: string;
-  location: {
-    lat: number;
-    lng: number;
+  priorityScore?: number;
+  priorityLevel?: PriorityLevel;
+  
+  location?: {
+    lat?: number;
+    lng?: number;
     state?: string;
     district?: string;
     constituency?: string;
-    blockOrTown: string;
+    blockOrTown?: string;
     villageOrWard?: string;
   };
-  inputMethod?: 'VOICE' | 'PHOTO' | 'TEXT';
-  intakeType?: 'VOICE' | 'PHOTO' | 'TEXT';
-  rawMediaUrl?: string;
-  photoBase64?: string;
-  imageStoragePath?: string;
-  rawText?: string;
-  detectedIssue?: string;
-  urgencyReasoning?: string;
-  priorityLevel?: PriorityLevel;
-  priorityScore?: number;
-  aiProcessing?: {
-    transcription?: string;
-    imageDefectDetected?: string;
-    extractedKeywords: string[];
-    sentimentUrgency: 'NORMAL' | 'HIGH' | 'CRITICAL';
-    aiConfidenceScore: number; // 0-100%
-    aiSummary: string;
-  };
+
+  aiProcessing?: any;
+}
+
+export interface CanonicalCitizenReportWrite {
+  clientSubmissionId: string;
+  
+  inputMethod: 'VOICE' | 'PHOTO' | 'TEXT';
+  intakeType: 'VOICE' | 'PHOTO' | 'TEXT';
+  
+  category: CategoryType;
+  aiCategory: string;
+  
+  title: string;
+  description: string;
+  rawText: string;
+  transcription: string;
+  aiSummary: string;
+  detectedIssue: string;
+  
+  aiConfidence: number;
+  priorityScore: number;
+  priorityLevel: PriorityLevel;
+  urgencyReasoning: string;
+  
+  hotspotId?: string;
   assignedHotspotId?: string;
-  duplicateStatus?: 'UNIQUE' | 'DUPLICATE_CLUSTERED';
+  
+  status: string;
+  verificationStatus: string;
+  duplicateStatus: string;
+  
+  location: {
+    blockOrTown: string;
+    villageOrWard: string;
+    district: string;
+    constituency: string;
+    state: string;
+    lat: number;
+    lng: number;
+  };
+  
+  voiceUrl?: string;
+  images: string[];
+  photoBase64: string;
+  imageStoragePath: string;
+  
+  aiProcessing: any;
+}
+
+export interface CitizenReport extends CanonicalCitizenReportWrite {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  // Fallback for components that still rely on timestamp strings. Will be dynamically added on read.
+  timestamp: string; 
 }
 
 export interface PriorityBreakdown {

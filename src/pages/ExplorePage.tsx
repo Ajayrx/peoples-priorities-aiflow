@@ -173,9 +173,9 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
         ? true
         : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
           (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
-          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+          (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
     });
 
     const filteredHotspots = hotspots.filter((hs) => {
@@ -215,7 +215,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
       const matchesCategory = selectedCategory === 'ALL' || rep.category === selectedCategory;
       const matchesSearch =
         (rep.title || rep.detectedIssue || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (rep.description || rep.rawText || rep.aiSummary || '').toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
@@ -254,8 +254,8 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
     }
     if (filteredReports.length > 0) {
       const firstRep = filteredReports[0];
-      const lat = firstRep.location?.lat || firstRep.latitude;
-      const lng = firstRep.location?.lng || firstRep.longitude;
+      const lat = firstRep.location?.lat || firstRep.location.lat;
+      const lng = firstRep.location?.lng || firstRep.location.lng;
       if (lat && lng && lat !== 20.5937 && lng !== 78.9629) {
         return [lat, lng];
       }
@@ -652,7 +652,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-800">
                                   <div className="flex items-center gap-1 font-mono text-[9px] font-extrabold text-teal-700 uppercase mb-0.5">
                                     <span>Latest Citizen Demand:</span>
-                                    <span>{hs.recentReports[0].inputMethod || (hs.recentReports[0].rawMediaUrl ? 'PHOTO' : 'TEXT')}</span>
+                                    <span>{hs.recentReports[0].inputMethod || (hs.recentReports[0].photoBase64 ? 'PHOTO' : 'TEXT')}</span>
                                   </div>
                                   <p className="italic truncate text-slate-700">
                                     "{hs.recentReports[0].rawText || hs.recentReports[0].aiProcessing?.transcription || hs.recentReports[0].aiProcessing?.aiSummary}"
@@ -678,12 +678,12 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                   {/* 4. Individual Verified Citizen Inputs (Voice, Photo, Text Complaints) */}
                   {showCitizenReports &&
                     filteredReports.map((rep, idx) => {
-                      const baseLat = rep.location?.lat || rep.latitude || 18.8135;
-                      const baseLng = rep.location?.lng || rep.longitude || 82.7125;
+                      const baseLat = rep.location?.lat || rep.location.lat || 18.8135;
+                      const baseLng = rep.location?.lng || rep.location.lng || 82.7125;
                       const repLat = baseLat;
                       const repLng = baseLng;
 
-                      const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.rawMediaUrl ? 'PHOTO' : 'TEXT');
+                      const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.photoBase64 ? 'PHOTO' : 'TEXT');
                       const pinColor = intakeMethod === 'VOICE' ? '#2563EB' : intakeMethod === 'PHOTO' ? '#9333EA' : '#0D9488';
 
                       return (
@@ -713,7 +713,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                                 {rep.detectedIssue || rep.title || 'Verified Citizen Submission'}
                               </strong>
                               <span className="text-[10px] text-teal-700 font-bold block mt-0.5 truncate">
-                                📍 {rep.location?.blockOrTown || rep.address || 'Verified Civic Locality'}
+                                📍 {rep.location?.blockOrTown || rep.location.blockOrTown || 'Verified Civic Locality'}
                               </span>
                             </div>
                           </Tooltip>
@@ -739,11 +739,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                                 "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
                               </div>
 
-                              {(rep.imageStoragePath || rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                              {(rep.imageStoragePath || rep.photoBase64 || rep.photoBase64 || (rep.images && rep.images.length > 0)) && (
                                 <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 shadow-2xs">
                                   <StorageImage
                                     imageStoragePath={rep.imageStoragePath}
-                                    fallbackSrc={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                                    fallbackSrc={rep.photoBase64 || rep.photoBase64 || rep.images![0]}
                                     alt="Citizen upload"
                                     className="w-full h-auto object-cover"
                                   />
@@ -752,7 +752,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
 
                               <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 pt-1.5 border-t border-slate-100">
                                 <span>Category: <strong className="text-slate-800">{rep.category}</strong></span>
-                                <span>Loc: <strong className="text-slate-800">{rep.address || rep.location?.blockOrTown || 'Koraput PC'}</strong></span>
+                                <span>Loc: <strong className="text-slate-800">{rep.location.blockOrTown || rep.location?.blockOrTown || 'Koraput PC'}</strong></span>
                               </div>
                             </div>
                           </Popup>
@@ -953,7 +953,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                 /* Individual Citizen Complaints Tab */
                 filteredReports.length > 0 ? (
                   filteredReports.map((rep, idx) => {
-                    const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.rawMediaUrl ? 'PHOTO' : 'TEXT');
+                    const intakeMethod = rep.inputMethod || rep.intakeType || (rep.photoBase64 || rep.photoBase64 ? 'PHOTO' : 'TEXT');
                     const badgeColor =
                       intakeMethod === 'VOICE'
                         ? 'bg-blue-100 text-blue-800 border-blue-200'
@@ -988,11 +988,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                           "{rep.rawText || rep.description || rep.aiSummary || rep.urgencyReasoning}"
                         </div>
 
-                        {(rep.imageStoragePath || rep.photoBase64 || rep.rawMediaUrl || (rep.images && rep.images.length > 0)) && (
+                        {(rep.imageStoragePath || rep.photoBase64 || rep.photoBase64 || (rep.images && rep.images.length > 0)) && (
                           <div className="rounded-xl overflow-hidden border border-slate-200 max-h-36 bg-slate-100 mt-1">
                             <StorageImage
                               imageStoragePath={rep.imageStoragePath}
-                              fallbackSrc={rep.photoBase64 || rep.rawMediaUrl || rep.images![0]}
+                              fallbackSrc={rep.photoBase64 || rep.photoBase64 || rep.images![0]}
                               alt="Citizen evidence"
                               className="w-full h-auto object-cover"
                             />
@@ -1000,7 +1000,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                         )}
 
                         <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 pt-2 border-t border-slate-100">
-                          <span className="truncate">📍 {rep.address || rep.location?.blockOrTown || 'Verified Civic Locality'}</span>
+                          <span className="truncate">📍 {rep.location.blockOrTown || rep.location?.blockOrTown || 'Verified Civic Locality'}</span>
                           <span className="text-teal-700 font-bold shrink-0">Verified Sample #{idx + 1}</span>
                         </div>
                       </div>
@@ -1265,7 +1265,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                     <div className="space-y-4">
                       {activeHotspot.recentReports.map((rep) => {
                         const isVoice = rep.inputMethod === 'VOICE' || (rep as any).intakeType === 'VOICE';
-                        const isPhoto = rep.rawMediaUrl || rep.inputMethod === 'PHOTO' || (rep as any).intakeType === 'PHOTO';
+                        const isPhoto = rep.photoBase64 || rep.inputMethod === 'PHOTO' || (rep as any).intakeType === 'PHOTO';
 
                         return (
                           <div key={rep.id} className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
@@ -1282,11 +1282,11 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                             </div>
 
                             {/* If Photo Report, display the actual image thumbnail and analysis */}
-                            {isPhoto && (rep.imageStoragePath || rep.rawMediaUrl) && (
+                            {isPhoto && (rep.imageStoragePath || rep.photoBase64) && (
                               <div className="flex flex-col sm:flex-row items-start gap-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200">
                                 <StorageImage 
                                   imageStoragePath={rep.imageStoragePath}
-                                  fallbackSrc={rep.rawMediaUrl || rep.photoBase64} 
+                                  fallbackSrc={rep.photoBase64 || rep.photoBase64} 
                                   alt="Verified Citizen Photo" 
                                   className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg border-2 border-emerald-400 shadow-md shrink-0" 
                                 />
@@ -1300,7 +1300,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                             )}
 
                             {/* Voice or Text Transcription Note */}
-                            {(!isPhoto || !rep.rawMediaUrl) && (
+                            {(!isPhoto || !rep.photoBase64) && (
                               <div>
                                 <div className="text-[10px] font-mono font-bold text-slate-400 uppercase">
                                   {isVoice ? 'Spoken Voice Transcribed Text (Odia / Hindi / English)' : 'Written Citizen Intake Note'}
@@ -1312,7 +1312,7 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ region, onNavigate }) 
                             )}
 
                             <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                              {(rep.aiProcessing?.extractedKeywords || ['Citizen Report', rep.category]).map((kw, i) => (
+                              {(rep.aiProcessing?.extractedKeywords || ['Citizen Report', rep.category]).map((kw: string, i: number) => (
                                 <span key={i} className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 text-[10px] font-mono font-bold border border-teal-200/60">
                                   #{kw}
                                 </span>

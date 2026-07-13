@@ -130,10 +130,10 @@ export function isSemanticClusterMatch(repA: CitizenReport, repB: CitizenReport)
     return false;
   }
 
-  const latA = repA.location?.lat || repA.latitude || 0;
-  const lngA = repA.location?.lng || repA.longitude || 0;
-  const latB = repB.location?.lat || repB.latitude || 0;
-  const lngB = repB.location?.lng || repB.longitude || 0;
+  const latA = repA.location.lat;
+  const lngA = repA.location.lng;
+  const latB = repB.location.lat;
+  const lngB = repB.location.lng;
 
   const distance = calculateDistanceMeters(latA, lngA, latB, lngB);
   if (distance <= CLUSTER_CONFIG.PROXIMITY_METERS) {
@@ -142,8 +142,8 @@ export function isSemanticClusterMatch(repA: CitizenReport, repB: CitizenReport)
 
   // If coordinates are regional block centers (e.g. exact same fallback lat/lng), check block/ward name similarity
   if (distance < 2000) {
-    const blockA = (repA.location?.blockOrTown || repA.address || '').toLowerCase().trim();
-    const blockB = (repB.location?.blockOrTown || repB.address || '').toLowerCase().trim();
+    const blockA = (repA.location.blockOrTown || '').toLowerCase().trim();
+    const blockB = (repB.location.blockOrTown || '').toLowerCase().trim();
     if (blockA && blockB && (blockA === blockB || blockA.includes(blockB) || blockB.includes(blockA))) {
       return true;
     }
@@ -171,7 +171,7 @@ export function calculateWeightedPriorityScore(
   // 3. Severity (20% weight): average of aiConfidenceScore / sentiment urgency across reports
   let totalSeverity = 0;
   for (const rep of reports) {
-    const urgency = rep.aiProcessing?.sentimentUrgency || rep.priorityLevel || rep.priority;
+    const urgency = rep.aiProcessing?.sentimentUrgency || rep.priorityLevel;
     if (urgency === 'CRITICAL') totalSeverity += 96;
     else if (urgency === 'HIGH') totalSeverity += 78;
     else if (urgency === 'MEDIUM') totalSeverity += 55;
@@ -275,18 +275,16 @@ export function runClusterEngine(allReports: CitizenReport[], baseHotspots: Hots
       let matchedBase: Hotspot | undefined = undefined;
       if (rep.assignedHotspotId && baseHotspotMap.has(rep.assignedHotspotId)) {
         matchedBase = baseHotspotMap.get(rep.assignedHotspotId);
-      } else if (rep.hotspotId && baseHotspotMap.has(rep.hotspotId)) {
-        matchedBase = baseHotspotMap.get(rep.hotspotId);
       } else {
         for (const bh of baseHotspots) {
           if (bh.category === rep.category) {
             const dist = calculateDistanceMeters(
               bh.location.center.lat,
               bh.location.center.lng,
-              rep.location?.lat || rep.latitude || 0,
-              rep.location?.lng || rep.longitude || 0
+              rep.location.lat,
+              rep.location.lng
             );
-            if (dist <= CLUSTER_CONFIG.PROXIMITY_METERS || (dist < 2000 && bh.location.blockOrTown.toLowerCase().includes((rep.location?.blockOrTown || '').toLowerCase()))) {
+            if (dist <= CLUSTER_CONFIG.PROXIMITY_METERS || (dist < 2000 && bh.location.blockOrTown.toLowerCase().includes((rep.location.blockOrTown || '').toLowerCase()))) {
               matchedBase = bh;
               break;
             }
@@ -314,8 +312,8 @@ export function runClusterEngine(allReports: CitizenReport[], baseHotspots: Hots
     let sumLat = 0;
     let sumLng = 0;
     for (const r of group.reports) {
-      sumLat += r.location?.lat || r.latitude || CLUSTER_CONFIG.INDIA_CENTER.lat;
-      sumLng += r.location?.lng || r.longitude || CLUSTER_CONFIG.INDIA_CENTER.lng;
+      sumLat += (r.location?.lat || 0);
+      sumLng += (r.location?.lng || 0);
     }
     const centerLat = repCount > 0 ? sumLat / repCount : CLUSTER_CONFIG.INDIA_CENTER.lat;
     const centerLng = repCount > 0 ? sumLng / repCount : CLUSTER_CONFIG.INDIA_CENTER.lng;
@@ -324,7 +322,7 @@ export function runClusterEngine(allReports: CitizenReport[], baseHotspots: Hots
     const basePop = group.baseCluster?.metrics.impactedPopulation || (repCount * 380 + 2500);
     const { finalScore, priorityLevel, breakdown } = calculateWeightedPriorityScore(group.reports, basePop);
 
-    const blockOrTownName = group.baseCluster?.location.blockOrTown || firstRep.location?.blockOrTown || firstRep.address || 'Verified Locality';
+    const blockOrTownName = group.baseCluster?.location.blockOrTown || firstRep.location?.blockOrTown || 'Verified Locality';
     const constituencyName = firstRep.location?.constituency || group.baseCluster?.location.constituency || 'Regional PC';
 
     // If candidate has < CLUSTER_CONFIG.THRESHOLD OR score < 40, treat individual reports as Monitored violet markers (🟣)

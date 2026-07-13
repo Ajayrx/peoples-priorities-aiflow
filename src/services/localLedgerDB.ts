@@ -1,4 +1,4 @@
-import type { LiveCitizenReport } from './liveCloudBus';
+import type { CitizenReport } from '../types';
 
 const DB_NAME = 'peoples_priorities_gis_ledger_v1';
 const DB_VERSION = 1;
@@ -33,7 +33,7 @@ function getDB(): Promise<IDBDatabase> {
 /**
  * Saves a verified citizen report into persistent IndexedDB ledger.
  */
-export async function saveReportToIndexedDB(report: LiveCitizenReport): Promise<void> {
+export async function saveReportToIndexedDB(report: CitizenReport): Promise<void> {
   try {
     const db = await getDB();
     return new Promise((resolve, reject) => {
@@ -52,7 +52,7 @@ export async function saveReportToIndexedDB(report: LiveCitizenReport): Promise<
 /**
  * Retrieves all stored citizen reports from IndexedDB (sorted newest first).
  */
-export async function getAllReportsFromIndexedDB(): Promise<LiveCitizenReport[]> {
+export async function getAllReportsFromIndexedDB(): Promise<CitizenReport[]> {
   try {
     const db = await getDB();
     return new Promise((resolve, reject) => {
@@ -61,7 +61,7 @@ export async function getAllReportsFromIndexedDB(): Promise<LiveCitizenReport[]>
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const results = (request.result || []) as LiveCitizenReport[];
+        const results = (request.result || []) as CitizenReport[];
         // Sort reverse chronological
         results.sort((a, b) => {
           const idA = a.id || '';

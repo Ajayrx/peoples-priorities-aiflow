@@ -330,7 +330,7 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
             const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`, { headers: { 'Accept-Language': 'en' } });
             if (resp.ok) {
               const data = await resp.json();
-              const addr = data.address || {};
+              const addr = data.location.blockOrTown || {};
               if (data.display_name) { const parts = data.display_name.split(','); locName = parts.slice(0, 3).join(', ').trim(); }
               if (addr.country) country = addr.country;
               if (addr.state) state = addr.state;
@@ -478,7 +478,6 @@ export const ReportPage: React.FC<ReportPageProps> = ({ region, onSelectRegion, 
     }
 
     await submitReport({
-      name: `Citizen Report • ${coordinates.locationName.split(',')[0]}`,
       category: intakeMode === 'VOICE' ? category : (visionResult?.category && ['Road', 'Drainage', 'Healthcare', 'Water', 'Schools', 'Electricity'].includes(visionResult.category) ? visionResult.category : category),
       priorityLevel: 'HIGH',
       priorityScore: intakeMode === 'VOICE' ? voiceConfidenceScore : (visionResult?.confidenceScore || 94),

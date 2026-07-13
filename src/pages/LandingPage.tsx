@@ -37,9 +37,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
         ? true
         : (rep.location?.constituency && rep.location.constituency.toLowerCase().includes(constName)) ||
           (rep.location?.district && rep.location.district.toLowerCase().includes(distName)) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
-          (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
-          (region.constituency.includes('Koraput') && (rep.address || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
+          (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes(constName) ||
+          (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes(distName) ||
+          (region.constituency.includes('Koraput') && (rep.location.blockOrTown || rep.location?.blockOrTown || '').toLowerCase().includes('semiliguda'));
     });
   }, [reports, region]);
 
@@ -87,9 +87,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, region, on
         raw: r,
         name: r.title || r.detectedIssue || 'Citizen Complaint',
         category: r.category,
-        priorityLevel: r.priority || r.priorityLevel || 'HIGH',
+        priorityLevel: r.priorityLevel || r.priorityLevel || 'HIGH',
         priorityScore: r.priorityScore || r.aiConfidence || 94,
-        locationName: r.location?.blockOrTown || r.address || 'Verified Pin',
+        locationName: r.location?.blockOrTown || r.location.blockOrTown || 'Verified Pin',
         description: r.description || r.urgencyReasoning || 'Citizen reported defect under review.',
         population: 380,
         details: 'Individual Monitored Pin',
