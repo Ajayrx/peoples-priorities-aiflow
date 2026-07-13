@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Database,
   CheckCircle2,
@@ -23,6 +23,25 @@ interface ManagementPageProps {
 }
 
 export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNavigate }) => {
+  const [isQuotaHidden, setIsQuotaHidden] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hideQuotaError') === 'true';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setIsQuotaHidden(localStorage.getItem('hideQuotaError') === 'true');
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('quotaErrorStateChanged', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('quotaErrorStateChanged', handleStorageChange);
+    };
+  }, []);
+
   const { t } = useLanguage();
   const isDemoRegion = region.constituency.includes('Koraput');
 
@@ -317,19 +336,28 @@ export const ManagementPage: React.FC<ManagementPageProps> = ({ region, onNaviga
               </div>
               <button
                 onClick={() => {
-                  const pass = prompt('Enter admin password to hide quota error:');
+                  const actionStr = isQuotaHidden ? 'SHOW' : 'HIDE';
+                  const pass = prompt(`Enter admin password to ${actionStr} quota error:`);
                   if (pass === 'iloveu') {
-                    localStorage.setItem('hideQuotaError', 'true');
+                    if (isQuotaHidden) {
+                      localStorage.removeItem('hideQuotaError');
+                    } else {
+                      localStorage.setItem('hideQuotaError', 'true');
+                    }
                     window.dispatchEvent(new Event('storage'));
                     window.dispatchEvent(new Event('quotaErrorStateChanged'));
-                    alert('Quota error UI hidden successfully.');
+                    alert(`Quota error UI ${isQuotaHidden ? 'restored' : 'hidden'} successfully.`);
                   } else if (pass !== null) {
                     alert('Incorrect password.');
                   }
                 }}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors border border-slate-300"
+                className={`w-full py-3 px-4 rounded-xl font-bold text-sm transition-colors border ${
+                  isQuotaHidden
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'
+                }`}
               >
-                Hide Firebase Quota Limit Error
+                {isQuotaHidden ? 'Show Firebase Quota Limit Error' : 'Hide Firebase Quota Limit Error'}
               </button>
             </div>
 
